@@ -1,21 +1,23 @@
-#QA for Fish Assemblages 
+#QA for Fish Assemblages -- Name Reconciliation 
 
 # 1) Reconcile names - Merge NAME_COM with FINAL_NAME from NRSA Taxa List
 
-# Common Names are provided by field crew. In some instances there are simple 
+# Common Names are provided by field crew. There could be simple 
 # misspellings or typos that prevent direct matching with existing NRSA Taxa list 
 # 
-# First checked "Unknown" or unidentified taxa against UNKNOWNS in FINAL_NAME
+# First check "Unknown" or unidentified taxa against UNKNOWNS in NRSA FINAL_NAME
 # using grep
 
-# Second checked NAME_COM against most similar taxa listed in FINAL_NAME using 
-# Fuzzy Matching. Obvious spelling errors were corrected 
+# Second check NAME_COM against most similar taxa listed in FINAL_NAME using 
+# Fuzzy Matching. Correct/Update obvious spelling errors 
 
-# Third NAME_COM was compared with taxa previously collected from the state 
-# during 1819 NRSA. This was used to reconcile ambiguous naming in NAME_COM  
+# Third compare NAME_COM to taxa previously collected from the state 
+# during 1819 NRSA. This was used to reconcile ambiguous naming in NAME_COM because
+# the other possibly suitable FINAL_NAME was not observed previously
 
-# Fourth NAME_COM was compared against AFS names (see: Names-of-Fishes-8-Table1.pdf)
-# accepted names are added as new records in database
+# Fourth compare NAME_COM against AFS accepted names (see: Names-of-Fishes-8-Table1.pdf). 
+# accepted names are to be added as new records in NRSA database and need autecology 
+# information
 
 library(tidyverse)
 library(sf)
@@ -26,10 +28,8 @@ library(stringdist)
 # Data Files 
 ################################################################################
 
-# Files from NRSA 1819: allNRSA_fishTaxa.tab contains Autecology data 
-# nars_taxa_col_1819 contains records of taxa collected previously. These files 
-# were used to identify if an ambiguous taxon was collected previously from the 
-# state
+# Files from NRSA 1819: "allNRSA_fishTaxa.tab" contains autecology data and
+# "nars_taxa_col_1819" contains records of taxa collected previously. 
 ######
 dir_NRSA_1819 <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa1819/data/"
 
@@ -40,7 +40,7 @@ nars_taxa_col_1819 <-  paste0(dir_NRSA_1819, "nrsa1819_fishCount_newUid.tab") %>
   read.table(sep = "\t", header = T)
 #######################
 
-# Site info -- locations needed to designate native/non-native status
+# Site info file -- locations for 2023-24
 ######
 dir_NRSA_2324 <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324"
 
@@ -63,21 +63,20 @@ site.info[!is.na(site.info[,c("LON_DD83")]) & site.info[,c("LON_DD83")]>0, "LON_
 fish_col <- dir_NRSA_2324%>%
   paste0("/raw/tabfiles/nrsa2324_fishcollectionWide_fish.tab") %>%
   read.table(sep = "\t", header = T)%>%
-  filter(grepl("2023", DATE_COL)) %>% # filters 2024 which may have incomplete identification  
-  mutate(SITE_ID_Mod = gsub("-","_", SITE_ID)) %>% # NRS23-Selawik-09 has dashes?
-  mutate(STATE = unlist(lapply(strsplit(SITE_ID_Mod,"_"), "[[", 2)))
+  #filter(grepl("2023", DATE_COL)) %>% # filters 2024 which may have incomplete identification  
+  mutate(SITE_ID_Mod = gsub("-", "_", SITE_ID)) %>% # NRS23-Selawik-09 has dashes?
+  mutate(STATE = unlist(lapply(strsplit(SITE_ID_Mod,"_"), "[[", 2))) %>% 
+  rowwise()%>%
+  mutate(TOTAL = sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm = T))
 
 #seem to be missing states
 state.abb[!state.abb%in%fish_col$STATE]
 
-
-# "nrsa2324_fishinfoWide.tab" sampling info. Did they sample to completion? Gear type etc.
-# "nrsa2324_fishcollectionWide_fplg.tab" Fish plug info -- unnecessary at the moment
 # "nrsa2324_fishcollectionWide_vert.tab" Fish voucher specimens 
 #######################
 
 ################################################################################
-# Quick tmap to view 2023 fish records. Locations with in fish collection file
+# Quick map to view fish records. Locations with in fish collection file
 # and site.info file
 ################################################################################
 
@@ -97,26 +96,28 @@ tmap_mode("view")
 tm_shape(site.info_WGS84)+
   tm_dots("YEAR")
 
-#NAD83 for CONUS -- Map sites with fish collection data NRSA 23
+#NAD83 for CONUS -- Map sites with >0 fish collection data 
 #######
+fishUID <- fish_col%>%filter(TOTAL>0)%>%select(UID)%>%distinct()
 site.info_NAD83 <- site.info %>%
-  filter(!is.na(LON_DD83) & !is.na(LAT_DD83) & UID %in% fish_col$UID) %>%
+  filter(!is.na(LON_DD83) & !is.na(LAT_DD83) & UID %in% fishUID$UID) %>%
   select(c(UID, SITE_ID, VISIT_NO, YEAR, HUC8, DATE_COL,
-           LON_DD83, LAT_DD83)) %>%
+           LON_DD83, LAT_DD83)) %>% 
+  mutate(YEAR = as.factor(YEAR))%>%
   st_as_sf(coords = c("LON_DD83", "LAT_DD83"), crs = 4269)
 ########################
 tmap_mode("view")
 tm_shape(site.info_NAD83) +
-  tm_dots("UID")
+  tm_dots("YEAR")
 
 ################################################################################
 # reconcile names
 ################################################################################
 
-# save original file as check 
+# save original file as check to ensure all records are accounted for 
 fish_col_original <- fish_col
 
-# Function to update Fish Collection Table 
+# Function to update Fish Collection Table durectly
 # the inputs are:
 # FIELD_Name = NAME_COM (name given in field)
 # FINAL_NAME = the reconciled name (typically 1819 FINAL_NAME)
@@ -133,6 +134,7 @@ updateRecord <- function(df, FIELD_Name, FINAL_NAME, STATE = "ALL"){
   return(df)
 }
 
+
 # Update direct matches. Records that have a match in NRSA taxa list 
 #######
 # Add NAME_COM_UPR, upper case of NAME_COM for matching with final name
@@ -144,23 +146,29 @@ fish_col <- fish_col%>%
 ind <- fish_col$NAME_COM_UPR %in% nars_taxa_list$FINAL_NAME
 fish_col$FINAL_NAME[ind] <- fish_col$NAME_COM_UPR[ind]
 ##########################################################
+dim(fish_col)
 
 # Check unknown taxa: 
 # Used grep function to compare the taxa with 
 # "unknown" entry in NAME_COM 
 #######
-# Sites from lower 48 without matching FINAL Name
+# Sites from lower 48 with NAME_COM but no matching FINAL_NAME
+# from NRSA Autecology dataset
+
 NewFish <- fish_col %>%
-  filter(FINAL_NAME=="" & 
-           NAME_COM!="" & 
-           !STATE%in%c("Selawik","GU"))%>%
+  filter(FINAL_NAME == "" & 
+           NAME_COM != "" & 
+           !STATE%in%c("Selawik", "GU")&
+           grepl("2023", DATE_COL))%>% #filters out 2024 data
   select(NAME_COM_UPR) %>%
   distinct()
 ###########################################################
-grep("UNKNOWN|SP.|UNIDENTIFIED", NewFish$NAME_COM_UPR, value = T)
-grep("UNKNOWN", nars_taxa_list$FINAL_NAME, value = T)
 
-# Update records for unknown taxa (after visual inspection) 
+
+# Update records for unknown taxa after visual inspection of 
+# Unknown taxa in NRSA table) 
+grep("UNKNOWN|SP.$|UNIDENTIFIED", NewFish$NAME_COM_UPR, value = T)
+grep("UNKNOWN", nars_taxa_list$FINAL_NAME, value = T)
 #######
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -239,7 +247,8 @@ fish_col <- fish_col %>%
 NewFish <- fish_col %>%
   filter(FINAL_NAME=="" & 
            NAME_COM!="" & 
-           !STATE%in%c("Selawik","GU"))%>%
+           !STATE%in%c("Selawik","GU") &
+           grepl("2023", DATE_COL)) %>%
   select(NAME_COM_UPR) %>%
   distinct()
 
@@ -256,9 +265,13 @@ rownames(Fuzzy_result) <- NARS_FINAL_NAME
 Fuzzy_result <- apply(Fuzzy_result, 2, 
                       function(x) list(names(x)[order(x)[1:15]]))
 #############################################
+
+
+# Visually inspect NAME_COM to closest matching FINAL_NAME in NRSA
+# autecology dataset. 
 Fuzzy_result
 
-# Updates records after fuzzy matching
+#Updates records after fuzzy matching
 ######
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -324,15 +337,13 @@ fish_col <- fish_col %>%
 # Checking names against 1819 survey 
 # For each ambiguous taxa against taxa that were collected from the same 
 # during the 2018-2019 cycle. 
-
-# Inspect results.  Each list element contains the most similar FINAL_Names 
-# for each NAME_COM and state combination
 #####
 # identified unmatched taxa, with state 
 NewFish <- fish_col %>%
   filter(FINAL_NAME=="" & 
            NAME_COM!="" & 
-           !STATE%in%c("Selawik", "GU"))%>%
+           !STATE %in% c("Selawik", "GU")&
+           grepl("2023", DATE_COL))%>%
   select(NAME_COM_UPR, STATE) %>%
   distinct()
 
@@ -363,6 +374,10 @@ for(nf in 1:nrow(NewFish)){
   Fuzzy_list[[lname]]<-rownames(Fuzzy_result)[order(Fuzzy_result[,1])[1:15]]
 }
 ##############################################
+
+# Inspect results.  Each list element is named with the NAME_COM and STATE 
+# abbreviation where it was collected. The values in each list element are 
+# the most similar FINAL_Names for each NAME_COM collected within the state 
 Fuzzy_list
 
 # update results based on taxa collected in the state
@@ -466,7 +481,8 @@ fish_col <- fish_col %>%
 NewFish <- fish_col %>%
   filter(FINAL_NAME=="" & 
            NAME_COM!="" & 
-           !STATE%in%c("Selawik", "GU"))%>%
+           !STATE%in%c("Selawik", "GU")&
+           grepl("2023", DATE_COL))%>%
   select(NAME_COM_UPR, STATE) %>%
   distinct()
 #######################################
@@ -563,41 +579,28 @@ fish_col <- fish_col %>%
 ################################################
 
 
-# append TAXA_ID to fish collection file
+# append TAXA_ID to fish collection file by merging with FINAL_NAME
 #########
 fish_col <- merge(fish_col, 
       unique(nars_taxa_list[,c("TAXA_ID","FINAL_NAME")]),
       by = "FINAL_NAME", 
       all.x = T)
 
-# Shows new records that need to be added to NRSA taxa list were not collected 
-# from GU
-unique(fish_col[is.na(fish_col$TAXA_ID) & 
-                  fish_col$NAME_COM_UPR!="" & 
-                  fish_col$STATE!="GU",])
-
+# This is the list of taxa that can be passed through to nativeness/range checks
 write.csv(fish_col, "Reconciled_Taxa_Names.csv")
-View(read.csv("Reconciled_Taxa_Names.csv"))
-fish_col<-read.csv("Reconciled_Taxa_Names.csv")
 
-# We need to nkow to get back to Brian and Chris to look at 23 data, Maybe we need updates with NAME_COM 
-# Need Names ASAP
 
-grep("COUNT", names(Reconciled_Taxa), value = T)
-c("COUNT_18","COUNT_19","COUNT_6","COUNT_12")
-length(unique(Reconciled_Taxa[Reconciled_Taxa$NAME_COM=="","UID"]))
-#Check FINAL_NAME assignments
-#Cleaned and sent to RM (8/28) for assistance with ambiguous taxa
-Reconciled_Taxa <- fish_col%>%
+# Query instances where NAME_COM is different from FINAL_NAME for 2023 
+# collections. This list can be shared with partners to see of the 
+# name change is appropriate. 
+Check_Taxa <- fish_col%>%
   filter(!STATE%in%c("Selawik", "GU")&
-           NAME_COM_UPR!=FINAL_NAME)%>%
+           NAME_COM_UPR!=FINAL_NAME&
+           TOTAL > 0 & 
+           grepl("2023", DATE_COL))%>%
   select(c("SITE_ID", "DATE_COL", "NAME_COM", "FINAL_NAME"))
 
-
-
-write.csv(Reconciled_Taxa, 
-          "Reconciled_Taxa_NRSA_23.csv", 
-          row.names = F)
+write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023.csv", row.names = F)
 
 
 
