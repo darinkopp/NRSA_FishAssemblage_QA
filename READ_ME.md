@@ -1,14 +1,14 @@
 National Rivers and Stream Assessment Fish Assemblage Quality Assurance
-Proceedure (DRAFT)
+Procedure (DRAFT)
 ================
 Darin Kopp, Richard Mitchell, Louis Reynolds, and Dave Peck
 2024-10-24
 
 <figure>
 <img src="QA_Figure.png"
-alt="Components of the quality assurance proceedure for fish assemblages" />
+alt="Components of the quality assurance procedure for fish assemblages" />
 <figcaption aria-hidden="true">Components of the quality assurance
-proceedure for fish assemblages</figcaption>
+procedure for fish assemblages</figcaption>
 </figure>
 
 ## 1) Name Reconciliation
