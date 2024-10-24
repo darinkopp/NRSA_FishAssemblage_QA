@@ -437,6 +437,14 @@ fish_col <- fish_col %>%
                STATE = "AR",
                FINAL_NAME = "ORANGETHROAT DARTER")
 
+# CHUB A    VA -- most state records seem to be part of Nocomis sp. but cheek chub is Semoltilus
+# assigning as "UNKNOWN MINNOW" aka Cyprinidae family
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "CHUB A",
+               STATE = "VA",
+               FINAL_NAME = "UNKNOWN MINNOW")
+
 
 
 # CA species --- kalamath and coastal rainbows... 
