@@ -69,9 +69,6 @@ fish_col <- dir_NRSA_2324%>%
   rowwise()%>%
   mutate(TOTAL = sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm = T))
 
-#seem to be missing states
-state.abb[!state.abb%in%fish_col$STATE]
-
 # "nrsa2324_fishcollectionWide_vert.tab" Fish voucher specimens 
 #######################
 
