@@ -26,7 +26,16 @@ library(tidyverse)
 library(nhdplusTools)
 
 ################################################################################
-# Functions
+
+  # API Query
+  NAS_Range <- httr::GET("http://nas.er.usgs.gov/api/v2/occurrence/search",
+                         query = list(genus=NM[1], species=NM[2]))
+  
+  # converts results into something usable
+  NAS_Range <- jsonlite::fromJSON(rawToChar(NAS_Range$content))
+  
+  # extracts HUC8
+  NAS_Range <- unique(NAS_Range$results$huc8)# Functions
 ################################################################################
 
 # Check Nature serve files
@@ -66,8 +75,8 @@ Check_NatureServe(SpeciesName = "Fundulus diaphanus",Path2Map = NatureServeDirec
 #######################################
 
 # check NAS 
-# USGS NAS API query for nonindigeous occurrences. 
-# Returns HUC of ocurrence
+# USGS NAS API query for indigenous occurrences. 
+# Returns HUC of occurrence
 ######
 Check_NAS <- function(SpeciesName){
   NM <- strsplit(SpeciesName, " ") %>% unlist()
@@ -81,6 +90,7 @@ Check_NAS <- function(SpeciesName){
   
   # extracts HUC8
   NAS_Range <- unique(NAS_Range$results$huc8)
+  
   
   if(is.null(NAS_Range)){NAS_Range<-"-9999999"}
   
@@ -188,6 +198,7 @@ NatureServeDirect <- "L:/Public/dpeck/NRSA 2018-19 FISH DATA CLEANUP/NATURESERVE
 # 2324 fish collections with reconciled names 
 ########
 fish_col <- read.csv("Reconciled_Taxa_Names.csv", row.names = "X")
+
 # new taxa that need to be added added to the NARSA taxa list are 
 # removed. These will be changed if they are added to the table. All taxa 
 # should have a TAXA_ID before reaching this step in the future
@@ -219,14 +230,18 @@ nars2324_Taxa <- unique(fish_col$TAXA_ID[!is.na(fish_col$TAXA_ID)])
 # iterate through each taxon collected from 2324 and check range 
 # and nativeness status using the HUC8
 #########
-#these taxa cannot be queried from NAS
-APITimeout_NAS <- c(105, 143, 301, 373, 374, 382, 5179, 213)
+#these taxa cannot be queried from NAS - I re-ran them on a sunday 
+# and it worked. I emailed Matt from NAS. 
+# change this to species names - Sometimes (i.e. nars_taxa_list$TAXA_ID%in%c(373,374,5179))
+# TAXA_ID refers to same species... which might overwhelm NAS API, 
+# NAS QUERY IS A BOTTLENECK! and needs to be resolved
+APITimeout_NAS <- c(66, 105, 143, 301, 374, 382, 5179, 213)
 nars2324_Taxa <- nars2324_Taxa[!nars2324_Taxa %in% APITimeout_NAS]
 
-nars2324_Taxa[which(nars2324_Taxa==213)]
 Nativeness_RangeMaps <- data.frame()
-for (id in nars2324_Taxa[163:length(nars2324_Taxa)]){
-  # id <- 473
+
+for (id in nars2324_Taxa){
+  # id <- 5179
   print(id)
   
   # select species name for TAXA_ID
@@ -239,7 +254,7 @@ for (id in nars2324_Taxa[163:length(nars2324_Taxa)]){
   NATIVE <- Check_NatureServe(SpeciesName = species, Path2Map = NatureServeDirect)
   NONNATIVE <- Check_NAS(SpeciesName = species)
   
-  # check prior survey for new hucs 
+ # check prior survey for new hucs 
   PriorSurvey <- allTheNRSA.NATIVENESS_HUC8 %>%
     filter(TAXA_ID == id) %>%
     mutate(HUC8 = substring(HUC8, 2, nchar(HUC8))) %>%
@@ -320,6 +335,7 @@ for (id in nars2324_Taxa[163:length(nars2324_Taxa)]){
 }
 ###################################################
 
+sv2<-Nativeness_RangeMaps
 # check nativeness table
 ######
 # The native range taxa should have a record for each taxon and site 
@@ -342,7 +358,17 @@ Nativeness_RangeMaps[is.na(Nativeness_RangeMaps$NON_NATIVE)&
                        Nativeness_RangeMaps$INTRODUCED=="Y", "NON_NATIVE"] <- "Y"
 
 ###################################################
+dim(Nativeness_RangeMaps)
+#sv3<-Nativeness_RangeMaps
 
+#Nativeness_RangeMaps<-sv3
+# there Introduced was identified by field crew on separate lines
+# comments preserved in final file
+Nativeness_RangeMaps[duplicated(Nativeness_RangeMaps[,c("UID","TAXA_ID")]),]
+Nativeness_RangeMaps[Nativeness_RangeMaps$UID==2023282&Nativeness_RangeMaps$TAXA_ID==5068, ]
+Nativeness_RangeMaps <- Nativeness_RangeMaps[-10,] 
+
+anyDuplicated(Nativeness_RangeMaps[,c("UID","TAXA_ID")])
 ################################################################################
 # Explain/interpret table
 # generate document to share with partners
@@ -351,7 +377,34 @@ Nativeness_RangeMaps[is.na(Nativeness_RangeMaps$NON_NATIVE)&
 # also be checked
 ################################################################################
 
+# make sure all records are accounded for. 
+# this table will be to query
+addNames<-names(Nativeness_RangeMaps)[!names(Nativeness_RangeMaps)%in%names(fish_col)]
 
-#write.csv(Nativeness_RangeMaps,"Nativeness_RangeMaps_10092024.csv")
-Nativeness_RangeMaps <- read.csv("Nativeness_RangeMaps_10092024.csv")
-View(Nativeness_RangeMaps)
+
+Nativeness <- merge(fish_col, Nativeness_RangeMaps[,c("UID","TAXA_ID",addNames)], 
+                    by = c("UID","TAXA_ID"),all.x = T)
+
+orderNames <- c("PUBLICATION_DATE","UNIQUE_ID", "SITE_ID", "VISIT_NO", "DATE_COL", 
+                "HUC8_num", "HUC8", "HUC6", 
+                "PSTL_CODE", "STATE", "SITE_ID_Mod", "SAMPLE_TYPE", "PAGE", "LINE", 
+                "UID","NAME_COM", "NAME_COM_UPR", "FINAL_NAME", "TAXA_ID", "SpeciesName",   
+                "FLAG", "INTRODUCED_NOT_EVAL", "INTRODUCED", "VOUCH_PHOTO",        
+                "VOUCH_UNK", "VOUCH_NUM", "HYBRID", "TAG", "VOUCH_QA", "REVIEW", 
+                "FISH_REVIEW", 
+                "COUNT_6","COUNT_12", "COUNT_18", "COUNT_19", "MORT_CT", "ANOM_COUNT",
+                "TOTAL","NON_NATIVE", "Source","HUC_LEVEL")
+Nativeness[Nativeness$FINAL_NAME=="UNKNOWN MINNOW","TAXA_ID"]<-584
+
+# write.csv(Nativeness[,orderNames],"Nativeness_10272024_B.csv")
+
+Nativeness <- read.csv("Nativeness_10272024_B.csv", row.names = "X")
+
+# Filter 2023 data
+NRSA_2023 <- Nativeness[Nativeness$TOTAL > 0&
+                          Nativeness$YEAR == 2023&
+                          Nativeness$STATE != "GU",]
+
+write.csv(Nativeness[,orderNames], "NRSA_2023.csv", row.names = F)
+
+

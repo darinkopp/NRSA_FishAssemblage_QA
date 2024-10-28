@@ -114,6 +114,7 @@ tm_shape(site.info_NAD83) +
 # save original file as check to ensure all records are accounted for 
 fish_col_original <- fish_col
 
+
 # Function to update Fish Collection Table durectly
 # the inputs are:
 # FIELD_Name = NAME_COM (name given in field)
@@ -550,13 +551,6 @@ fish_col <- fish_col %>%
                STATE = "FL",
                FINAL_NAME = "UNKNOWN ICTALURIDAE -- NR")
 
-# CHUB A    VA -- UNKNOWN SQUALIUS
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "CHUB A",
-               STATE = "VA",
-               FINAL_NAME = "UNKNOWN SQUALIUS -- NR")
-
 # "UNKNOWN SPOT FIN SMALL" is this spotfin shiner? --- 
 # SHEEPSHEAD    LA -- Assuming that this is the minnow bc above
 
@@ -591,9 +585,11 @@ fish_col <- merge(fish_col,
       by = "FINAL_NAME", 
       all.x = T)
 
+# Check all rows are accounted for
+nrow(fish_col_original)==nrow(fish_col)
+
 # This is the list of taxa that can be passed through to nativeness/range checks
 write.csv(fish_col, "Reconciled_Taxa_Names.csv")
-
 
 # Query instances where NAME_COM is different from FINAL_NAME for 2023 
 # collections. This list can be shared with partners to see of the 
