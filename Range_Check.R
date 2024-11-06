@@ -27,15 +27,6 @@ library(nhdplusTools)
 
 ################################################################################
 
-  # API Query
-  NAS_Range <- httr::GET("http://nas.er.usgs.gov/api/v2/occurrence/search",
-                         query = list(genus=NM[1], species=NM[2]))
-  
-  # converts results into something usable
-  NAS_Range <- jsonlite::fromJSON(rawToChar(NAS_Range$content))
-  
-  # extracts HUC8
-  NAS_Range <- unique(NAS_Range$results$huc8)# Functions
 ################################################################################
 
 # Check Nature serve files
@@ -102,6 +93,7 @@ Check_NAS <- function(SpeciesName){
 Check_NAS(SpeciesName = "Etheostoma douglasi")
 Check_NAS(SpeciesName = "Atractosteus spatula")
 Check_NAS(SpeciesName = "Fundulus diaphanus")
+Check_NAS(SpeciesName = "Strongylura marina")
 #######################################
 
 
@@ -405,6 +397,13 @@ NRSA_2023 <- Nativeness[Nativeness$TOTAL > 0&
                           Nativeness$YEAR == 2023&
                           Nativeness$STATE != "GU",]
 
-write.csv(Nativeness[,orderNames], "NRSA_2023.csv", row.names = F)
+
+write.csv(NRSA_2023, "NRSA_2023.csv", row.names = F)
+
+ View(Nativeness[Nativeness$TOTAL > 0 &
+                 Nativeness$VISIT_NO!=99&
+                 Nativeness$YEAR == 2023 &
+                 Nativeness$STATE != "GU" &
+                 is.na(Nativeness$NON_NATIVE),])
 
 

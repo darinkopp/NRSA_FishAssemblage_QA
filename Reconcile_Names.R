@@ -72,6 +72,7 @@ fish_col <- dir_NRSA_2324%>%
 # "nrsa2324_fishcollectionWide_vert.tab" Fish voucher specimens 
 #######################
 
+
 ################################################################################
 # Quick map to view fish records. Locations with in fish collection file
 # and site.info file
@@ -115,7 +116,7 @@ tm_shape(site.info_NAD83) +
 fish_col_original <- fish_col
 
 
-# Function to update Fish Collection Table durectly
+# Function to update Fish Collection Table directly
 # the inputs are:
 # FIELD_Name = NAME_COM (name given in field)
 # FINAL_NAME = the reconciled name (typically 1819 FINAL_NAME)
@@ -146,13 +147,13 @@ fish_col$FINAL_NAME[ind] <- fish_col$NAME_COM_UPR[ind]
 ##########################################################
 dim(fish_col)
 
+
 # Check unknown taxa: 
 # Used grep function to compare the taxa with 
 # "unknown" entry in NAME_COM 
 #######
 # Sites from lower 48 with NAME_COM but no matching FINAL_NAME
-# from NRSA Autecology dataset
-
+# from NRSA Autecology dataset -- all Selawik TOTAL = 0
 NewFish <- fish_col %>%
   filter(FINAL_NAME == "" & 
            NAME_COM != "" & 
@@ -165,57 +166,11 @@ NewFish <- fish_col %>%
 
 # Update records for unknown taxa after visual inspection of 
 # Unknown taxa in NRSA table) 
-grep("UNKNOWN|SP.$|UNIDENTIFIED", NewFish$NAME_COM_UPR, value = T)
-grep("UNKNOWN", nars_taxa_list$FINAL_NAME, value = T)
+sort(grep("UNKNOWN|SP.$|UNIDENTIFIED", NewFish$NAME_COM_UPR, value = T))
+sort(grep("UNKNOWN", nars_taxa_list$FINAL_NAME, value = T))
+
 #######
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("UNKNOWN 3","?"), 
-               FINAL_NAME = "UNKNOWN")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "UNKNOWN SCULPIN", 
-               FINAL_NAME = "UNKNOWN COTTUS")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("UNKNOWN CYPRINDS", 
-                              "UNKNOWN CYPRINID"), 
-               FINAL_NAME = "UNKNOWN MINNOW")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("UNIDENTIFIED SUCKER"), 
-               FINAL_NAME = "UNKNOWN SUCKER")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("UNKNOWN REDHORSE",
-                              "UNIDENTIFIED MOXOSTOMA", 
-                              "MOXOSTOMA SP."), 
-               FINAL_NAME = "UNKNOWN MOXOSTOMA")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("SHINER A",
-                              "SHINER B"), 
-               FINAL_NAME = "UNKNOWN SHINER")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("CYPRINELLA A"), 
-               FINAL_NAME = "UNKNOWN CYPRINELLA")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "ICTIOBUS SP.", 
-               FINAL_NAME = "UNKNOWN ICTIOBUS")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "ICHTHYOMYZON SP.", 
-               FINAL_NAME = "UNKNOWN ICHTHYOMYZON")
+fish_col[fish_col$NAME_COM_UPR == "" & fish_col$TOTAL >0,"FINAL_NAME"] <- "UNKNOWN"
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -229,8 +184,49 @@ fish_col <- fish_col %>%
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "MADTOM", 
-               FINAL_NAME = "UNKNOWN NOTURUS") 
+               FIELD_Name = "ICHTHYOMYZON SP.", 
+               FINAL_NAME = "UNKNOWN ICHTHYOMYZON")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "ICTIOBUS SP.", 
+               FINAL_NAME = "UNKNOWN ICTIOBUS")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = c("UNKNOWN REDHORSE",
+                              "UNIDENTIFIED MOXOSTOMA", 
+                              "MOXOSTOMA SP."), 
+               FINAL_NAME = "UNKNOWN MOXOSTOMA")
+
+# Unknown should be recorded to family 
+# UNKNOWN CATOSTOMIDAE -- not change here. 
+# Need to confirm with Karen B. 
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = c("UNIDENTIFIED SUCKER"), 
+               FINAL_NAME = "UNKNOWN SUCKER")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = c("UNKNOWN 3"), 
+               FINAL_NAME = "UNKNOWN")
+
+
+# Unknown should be recorded to family 
+# UNKNOWN CATOSTOMIDAE -- not change here
+# should be UNKNOWN CYPRINIDAE ???
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = c("UNKNOWN CYPRINDS", 
+                              "UNKNOWN CYPRINID"), 
+               FINAL_NAME = "UNKNOWN MINNOW")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "UNKNOWN SCULPIN", 
+               FINAL_NAME = "UNKNOWN COTTUS")
+
 #############################################
 
 # Check for misspellings/typos:  
@@ -395,7 +391,7 @@ fish_col <- fish_col %>%
                STATE = "ND",
                FINAL_NAME = "NORTHERN PEARL DACE")
 
-# only minnow from illinois
+# only minnow from IL
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BLUNTNOSE",
@@ -428,22 +424,28 @@ fish_col <- fish_col %>%
                FINAL_NAME = "BLUNTNOSE MINNOW")
 
 # Ozark Darter is not listed in AFS. It is part of the Orangethroat Darter
-# Etheostoma spectabile complex
+# Etheostoma spectabile complex -- Formerly there were five named 
+# subspecies: uniporum, fragi, pulchellum, squamosum, and spectabile, 
+# the latter "with several races" (Page and Burr 1991). Ceas and Page (1997) 
+# elevated uniporum and fragi (Strawberry Darter) to species status and split off four new species 
+# (E. burri, E. tecumsehi, E. kantuckeense, and E. bison) from the southeastern 
+# and southcentral parts of the range of E. spectabile. 
+# Ceas (1997) recognized several undescribed species in this complex: 
+# Ozark darter, headwater darter (now E. lawrencei), Sheltowee darter, 
+# Cumberland darter, and Caney Fork darter.
+
+# uniporum and fragi (Strawberry Darter) both can occur in AR and strawberry darter, 
+# was collected during a previous sruvey, BUT from above "Ozark Darter" 
+# is an unrecognized as part of E. burri (only Missouri), E. tecumsehi (Kentucky), 
+# E. kantuckeense (Kentucky or TN), or E. bison (Kentucky and TN). Thus, Orangethroat 
+# darter seems like the best choice. see https://www.jstor.org/stable/1447555?seq=18
+# for more. 
+
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "OZARK DARTER",
                STATE = "AR",
                FINAL_NAME = "ORANGETHROAT DARTER")
-
-# CHUB A    VA -- most state records seem to be part of Nocomis sp. but cheek chub is Semoltilus
-# assigning as "UNKNOWN MINNOW" aka Cyprinidae family
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "CHUB A",
-               STATE = "VA",
-               FINAL_NAME = "UNKNOWN MINNOW")
-
-
 
 # CA species --- kalamath and coastal rainbows... 
 # most of these are subspecies that were not recognized by AFS. I could add as
@@ -502,54 +504,56 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "PINFISH",
                STATE = "LA",
-               FINAL_NAME = "Lagodon rhomboides -- NR")
+               FINAL_NAME = "PINFISH -- NR")
 
 # SHEEPSHEAD (MARINE)    LA -- Archosargus probatocephalus
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "SHEEPSHEAD (MARINE)",
                STATE = "LA",
-               FINAL_NAME = "Archosargus probatocephalus -- NR")
+               FINAL_NAME = "SHEEPSHEAD (MARINE) -- NR")
 
 # STRIPED MOJARRA -- Eugerres plumieri
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "STRIPED MOJARRA",
                STATE = "FL",
-               FINAL_NAME = "Eugerres plumieri -- NR")
+               FINAL_NAME = "STRIPED MOJARRA -- NR")
+
 # BAYOU TOPMINNOW    MS -- Fundulus nottii
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BAYOU TOPMINNOW",
                STATE = "MS",
-               FINAL_NAME = "Fundulus nottii -- NR")
+               FINAL_NAME = "BAYOU TOPMINNOW -- NR")
 
 # BUTTERFLY PEACOCK BASS -- Cichla ocellaris
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BUTTERFLY PEACOCK BASS",
                STATE = "FL",
-               FINAL_NAME = "Cichla ocellaris -- NR")
+               FINAL_NAME = "BUTTERFLY PEACOCK BASS -- NR")
 
 # HEADWATER DARTER    KY -- Etheostoma lawrencei
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "HEADWATER DARTER",
                STATE = "KY",
-               FINAL_NAME = "Etheostoma lawrencei -- NR")
+               FINAL_NAME = "HEADWATER DARTER -- NR")
+
 # ORANGEFIN MADTOM    VA -- Noturus gilberti 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "ORANGEFIN MADTOM",
                STATE = "VA",
-               FINAL_NAME = "Noturus gilberti -- NR")
+               FINAL_NAME = "ORANGEFIN MADTOM -- NR")
 
 # UNKNOWN CATFISH    FL -- UNKNOWN ICTALURIDAE 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "UNKNOWN CATFISH",
                STATE = "FL",
-               FINAL_NAME = "UNKNOWN ICTALURIDAE -- NR")
+               FINAL_NAME = "UNKNOWN CATFISH -- NR")
 
 # "UNKNOWN SPOT FIN SMALL" is this spotfin shiner? --- 
 # SHEEPSHEAD    LA -- Assuming that this is the minnow bc above
@@ -575,6 +579,44 @@ fish_col <- fish_col %>%
                FIELD_Name = "REDEYE BASS X ALABAMA BASS",
                STATE = "SC",
                FINAL_NAME = "ALABAMA BASS X REDEYE BASS -- NR")
+
+# CHUB A    VA -- most state records seem to be part of Nocomis sp. but cheek chub is Semoltilus
+# assigning as "UNKNOWN MINNOW" aka Cyprinidae family
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "CHUB A",
+               STATE = "VA",
+               FINAL_NAME = "UNKNOWN NOCOMIS -- NR")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "MADTOM",
+               STATE = "VA",
+               FINAL_NAME = "UNKNOWN NOTURUS")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "MADTOM",
+               STATE = "GA",
+               FINAL_NAME = "UNKNOWN NOTURUS")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "SHINER B",
+               STATE = "VA",
+               FINAL_NAME = "UNKNOWN SHINER")
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "SHINER A",
+               STATE = "VA",
+               FINAL_NAME = "UNKNOWN SHINER")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "CYPRINELLA A",
+               STATE = "VA",
+               FINAL_NAME = "UNKNOWN CYPRINELLA")
+
 ################################################
 
 
@@ -584,22 +626,29 @@ fish_col <- merge(fish_col,
       unique(nars_taxa_list[,c("TAXA_ID","FINAL_NAME")]),
       by = "FINAL_NAME", 
       all.x = T)
-
+fish_col[fish_col$FINAL_NAME=="UNKNOWN",]
 # Check all rows are accounted for
 nrow(fish_col_original)==nrow(fish_col)
+
+
+names(fish_col)
 
 # This is the list of taxa that can be passed through to nativeness/range checks
 write.csv(fish_col, "Reconciled_Taxa_Names.csv")
 
+z<-fish_col[fish_col$NAME_COM==""&fish_col$TOTAL>0,]
 # Query instances where NAME_COM is different from FINAL_NAME for 2023 
 # collections. This list can be shared with partners to see of the 
 # name change is appropriate. 
 Check_Taxa <- fish_col%>%
   filter(!STATE%in%c("Selawik", "GU")&
-           NAME_COM_UPR!=FINAL_NAME&
+           NAME_COM_UPR != FINAL_NAME|str_detect(FINAL_NAME, "UNKNOWN")&#FINAL_NAME=="UNKNOWN"&
            TOTAL > 0 & 
            grepl("2023", DATE_COL))%>%
-  select(c("SITE_ID", "DATE_COL", "NAME_COM", "FINAL_NAME"))
+  select(c("SITE_ID", "VISIT_NO", "DATE_COL", "NAME_COM", "FINAL_NAME",
+           "VOUCH_PHOTO", "VOUCH_UNK", "VOUCH_QA"))
+
+
 
 write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023.csv", row.names = F)
 
