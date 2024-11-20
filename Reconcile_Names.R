@@ -67,53 +67,20 @@ fish_col <- dir_NRSA_2324%>%
   mutate(SITE_ID_Mod = gsub("-", "_", SITE_ID)) %>% # NRS23-Selawik-09 has dashes?
   mutate(STATE = unlist(lapply(strsplit(SITE_ID_Mod,"_"), "[[", 2))) %>% 
   rowwise()%>%
-  mutate(TOTAL = sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm = T))
+  mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm = T)>0,
+                                "Y","N"))
 
-# "nrsa2324_fishcollectionWide_vert.tab" Fish voucher specimens 
-#######################
+anyDuplicated(fish_col[fish_col$HAS_COUNT=="Y", 
+                       c("UID","LINE","NAME_COM")])
 
-
-################################################################################
-# Quick map to view fish records. Locations with in fish collection file
-# and site.info file
-################################################################################
-
-#WGS84 for Guam and AK -- Map sites with fish collection data NRSA 23
-######
-site.info_WGS84 <- site.info%>%
-  filter(!is.na(LON_DD84)& !is.na(LAT_DD84) & UID %in% fish_col$UID) %>%
-  select(c(UID, SITE_ID, VISIT_NO, YEAR, HUC8, DATE_COL,
-           LON_DD84, LAT_DD84))%>%
-  mutate_at(vars(YEAR), 
-            list(factor))%>%
-  st_as_sf(coords = c("LON_DD84", "LAT_DD84"), crs = 4326)%>%
-  st_transform(4269)
+# Fish voucher specimens? 
+dir_NRSA_2324%>%
+  paste0("/raw/tabfiles/nrsa2324_fishcollectionWide_vert.tab") %>%
+  read.table(sep = "\t", header = T)%>%
+  filter(!is.na(SAMPLE_ID))%>%
+  dim()
 
 #######################
-tmap_mode("view")
-tm_shape(site.info_WGS84)+
-  tm_dots("YEAR")
-
-#NAD83 for CONUS -- Map sites with >0 fish collection data 
-#######
-fishUID <- fish_col%>%filter(TOTAL>0)%>%select(UID)%>%distinct()
-site.info_NAD83 <- site.info %>%
-  filter(!is.na(LON_DD83) & !is.na(LAT_DD83) & UID %in% fishUID$UID) %>%
-  select(c(UID, SITE_ID, VISIT_NO, YEAR, HUC8, DATE_COL,
-           LON_DD83, LAT_DD83)) %>% 
-  mutate(YEAR = as.factor(YEAR))%>%
-  st_as_sf(coords = c("LON_DD83", "LAT_DD83"), crs = 4269)
-########################
-tmap_mode("view")
-tm_shape(site.info_NAD83) +
-  tm_dots("YEAR")
-
-################################################################################
-# reconcile names
-################################################################################
-
-# save original file as check to ensure all records are accounted for 
-fish_col_original <- fish_col
 
 
 # Function to update Fish Collection Table directly
@@ -132,6 +99,96 @@ updateRecord <- function(df, FIELD_Name, FINAL_NAME, STATE = "ALL"){
   }
   return(df)
 }
+
+
+################################################################################
+# reconcile names
+################################################################################
+
+# save original file as check to ensure all records are accounted for 
+fish_col_original <- fish_col
+
+
+# Compare names provided by field taxonomist to names provided by the lab
+#############
+# Site, Visit, Tag for QA file --- the objective here is to pull out the list
+# with matching records. Biggest challenge was that crews sometimes did not 
+# record the "TAG" of the specimen that they submitted. In most instances 
+# these were resolved using the "LINE" but a few instances required detective
+# work that compared the LAB QA with the SITE in the collection file.
+
+
+# QA Lab file provided by RM. Photo vouchers are found in Field Crews directory  
+LAB_QA <- read.csv("Fish_QA_MBI_2023_11_30.csv")
+
+
+# Adding TAG to sites/specimens that were submitted for voucher
+
+# there were 26 TAG.NUMBER in LAB QA file -- assume line number is appropriate
+fish_col[fish_col$SITE_ID == "NRS23_GA_10041" & is.na(fish_col$TAG),"TAG"] <- 
+  fish_col[fish_col$SITE_ID == "NRS23_GA_10041" & is.na(fish_col$TAG),"LINE"]
+
+# there were 3 TAG.NUMBER in LAB QA file -- assume line number is appropriate
+fish_col[fish_col$SITE_ID=="NRS23_ID_10192"&is.na(fish_col$TAG),"TAG"] <- 
+  fish_col[fish_col$SITE_ID=="NRS23_ID_10192"&is.na(fish_col$TAG),"LINE"]
+
+# there were 4 TAG.NUMBER in LAB QA file -- assume line number is appropriate
+fish_col[fish_col$SITE_ID=="NRS23_MT_10069"&is.na(fish_col$TAG),"TAG"] <-
+  fish_col[fish_col$SITE_ID=="NRS23_MT_10069" & is.na(fish_col$TAG),"LINE"]
+
+# there were 5 TAG.NUMBER in LAB QA file -- assume line number is appropriate. 
+# Site was also revisited, so filter to visit 1 which was included in LAB QA 
+fish_col[fish_col$SITE_ID == "NRS23_MT_10013" & is.na(fish_col$TAG)& 
+           fish_col$VISIT_NO==1, "TAG"] <- 
+  fish_col[fish_col$SITE_ID=="NRS23_MT_10013" & is.na(fish_col$TAG) & 
+             fish_col$VISIT_NO==1, "LINE"]
+
+# -- assume line number is appropriate
+fish_col[fish_col$SITE_ID == "NRS23_TX_10306" & is.na(fish_col$TAG)& 
+           fish_col$VISIT_NO==1, "TAG"] <- 
+  fish_col[fish_col$SITE_ID=="NRS23_TX_10306" & is.na(fish_col$TAG) & 
+             fish_col$VISIT_NO==1, "LINE"]
+
+# TAG == 0 in collection file -- assume they meant 44, as listed LAB QA file
+fish_col[fish_col$SITE_ID == "NRS23_SD_10017" & 
+           !is.na(fish_col$TAG) & 
+           fish_col$TAG==0, "TAG"] <- 44
+
+# TAG not provided by field crew, assuming its 10 from LAB QA file
+fish_col[fish_col$SITE_ID == "NRS23_NY_HP002" & 
+           is.na(fish_col$TAG), "TAG"] <- 10
+
+
+# Merge LAB QA with collection file. HAS_COUNT indicates that field crews 
+# recorded counts for the taxa they collected. is.na(fish_col$TAG) removed 
+# duplicate values 
+MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" & 
+                               !is.na(fish_col$TAG),
+                             c("SITE_ID", "VISIT_NO","LINE", "TAG", 
+                               "VOUCH_NUM", "NAME_COM")],
+                    LAB_QA[,c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER", 
+                     "COMMON.NAME", "COMMENTS")], 
+           by.y =c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER"), 
+           by.x =  c("SITE_ID", "VISIT_NO", "TAG"), 
+           all.y = T)
+
+differences <- MergedData[trimws(toupper(MergedData$COMMON.NAME)) != 
+                            trimws(toupper(MergedData$NAME_COM)),]
+##################################################
+
+# Pause here: tempted to update all differences to name provided by taxonomist, 
+# meeting with RM and LR for thoughts...
+write.csv(differences,"Fish_QA_MBI_2023_11_30_wField_ID_Differences.csv")
+
+MergedData[toupper(MergedData$COMMON.NAME) == MergedData$NAME_COM,]
+
+# in some instances, multiple taxa were identified by the lab taxonomist. 
+# these need to be added as new records. Following DP use decimals to 
+# insert LINE and keep the same TAG number. Allocate total count between 
+# the species based on the percentage of voucher specimens. This needs to be 
+# included below. 
+
+
 
 
 # Update direct matches. Records that have a match in NRSA taxa list 
@@ -636,7 +693,7 @@ names(fish_col)
 # This is the list of taxa that can be passed through to nativeness/range checks
 write.csv(fish_col, "Reconciled_Taxa_Names.csv")
 
-z<-fish_col[fish_col$NAME_COM==""&fish_col$TOTAL>0,]
+z<-fish_col[fish_col$NAME_COM==""&fish_col$HAS_COUNT=="Y",]
 # Query instances where NAME_COM is different from FINAL_NAME for 2023 
 # collections. This list can be shared with partners to see of the 
 # name change is appropriate. 
@@ -652,6 +709,44 @@ Check_Taxa <- fish_col%>%
 
 write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023.csv", row.names = F)
 
+
+
+
+
+################################################################################
+# Quick map to view fish records. Locations with in fish collection file
+# and site.info file
+################################################################################
+
+#WGS84 for Guam and AK -- Map sites with fish collection data NRSA 23
+######
+site.info_WGS84 <- site.info%>%
+  filter(!is.na(LON_DD84)& !is.na(LAT_DD84) & UID %in% fish_col$UID) %>%
+  select(c(UID, SITE_ID, VISIT_NO, YEAR, HUC8, DATE_COL,
+           LON_DD84, LAT_DD84))%>%
+  mutate_at(vars(YEAR), 
+            list(factor))%>%
+  st_as_sf(coords = c("LON_DD84", "LAT_DD84"), crs = 4326)%>%
+  st_transform(4269)
+
+#######################
+tmap_mode("view")
+tm_shape(site.info_WGS84)+
+  tm_dots("YEAR")
+
+#NAD83 for CONUS -- Map sites with >0 fish collection data 
+#######
+fishUID <- fish_col%>%filter(HAS_COUNT=="Y")%>%select(UID)%>%distinct()
+site.info_NAD83 <- site.info %>%
+  filter(!is.na(LON_DD83) & !is.na(LAT_DD83) & UID %in% fishUID$UID) %>%
+  select(c(UID, SITE_ID, VISIT_NO, YEAR, HUC8, DATE_COL,
+           LON_DD83, LAT_DD83)) %>% 
+  mutate(YEAR = as.factor(YEAR))%>%
+  st_as_sf(coords = c("LON_DD83", "LAT_DD83"), crs = 4269)
+########################
+tmap_mode("view")
+tm_shape(site.info_NAD83) +
+  tm_dots("YEAR")
 
 
 
