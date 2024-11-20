@@ -1,19 +1,19 @@
 #QA for Fish Assemblages -- Name Reconciliation 
 
-# 1) Reconcile names - Merge NAME_COM with FINAL_NAME from NRSA Taxa List
+# 1) Reconcile names - Merge NAME_COM with NAME_COM_CORRECTED from NRSA Taxa List
 
 # Common Names are provided by field crew. There could be simple 
 # misspellings or typos that prevent direct matching with existing NRSA Taxa list 
 # 
-# First check "Unknown" or unidentified taxa against UNKNOWNS in NRSA FINAL_NAME
+# First check "Unknown" or unidentified taxa against UNKNOWNS in NRSA NAME_COM_CORRECTED
 # using grep
 
-# Second check NAME_COM against most similar taxa listed in FINAL_NAME using 
+# Second check NAME_COM against most similar taxa listed in NAME_COM_CORRECTED using 
 # Fuzzy Matching. Correct/Update obvious spelling errors 
 
 # Third compare NAME_COM to taxa previously collected from the state 
 # during 1819 NRSA. This was used to reconcile ambiguous naming in NAME_COM because
-# the other possibly suitable FINAL_NAME was not observed previously
+# the other possibly suitable NAME_COM_CORRECTED was not observed previously
 
 # Fourth compare NAME_COM against AFS accepted names (see: Names-of-Fishes-8-Table1.pdf). 
 # accepted names are to be added as new records in NRSA database and need autecology 
@@ -37,7 +37,9 @@ nars_taxa_list <- paste0(dir_NRSA_1819, "allNRSA_fishTaxa.tab") %>%
   read.table(sep = "\t", header = T)
 
 nars_taxa_col_1819 <-  paste0(dir_NRSA_1819, "nrsa1819_fishCount_newUid.tab") %>%
-  read.table(sep = "\t", header = T)
+  read.table(sep = "\t", header = T) %>%
+  select(STATE)%>%
+  distinct()
 #######################
 
 # Site info file -- locations for 2023-24
@@ -70,9 +72,6 @@ fish_col <- dir_NRSA_2324%>%
   mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm = T)>0,
                                 "Y","N"))
 
-anyDuplicated(fish_col[fish_col$HAS_COUNT=="Y", 
-                       c("UID","LINE","NAME_COM")])
-
 # Fish voucher specimens? 
 dir_NRSA_2324%>%
   paste0("/raw/tabfiles/nrsa2324_fishcollectionWide_vert.tab") %>%
@@ -86,16 +85,16 @@ dir_NRSA_2324%>%
 # Function to update Fish Collection Table directly
 # the inputs are:
 # FIELD_Name = NAME_COM (name given in field)
-# FINAL_NAME = the reconciled name (typically 1819 FINAL_NAME)
+# NAME_COM_CORRECTED = the reconciled name (typically 1819 NAME_COM_CORRECTED)
 # STATE = State that the record should be updated. (In some instances 
 # PEARL DACE was named differently (e.g. Northern, or Allegheny) depending on 
 # where it was collected)
 
-updateRecord <- function(df, FIELD_Name, FINAL_NAME, STATE = "ALL"){
+updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
   if(STATE=="ALL"){
-    df[df$NAME_COM_UPR %in% FIELD_Name, "FINAL_NAME"] <- FINAL_NAME    
+    df[df$NAME_COM_UPR %in% FIELD_Name, "NAME_COM_CORRECTED"] <- NAME_COM_CORRECTED    
   } else{
-    df[df$NAME_COM_UPR %in% FIELD_Name & df$STATE==STATE, "FINAL_NAME"] <- FINAL_NAME 
+    df[df$NAME_COM_UPR %in% FIELD_Name & df$STATE==STATE, "NAME_COM_CORRECTED"] <- NAME_COM_CORRECTED 
   }
   return(df)
 }
@@ -165,7 +164,8 @@ fish_col[fish_col$SITE_ID == "NRS23_NY_HP002" &
 MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" & 
                                !is.na(fish_col$TAG),
                              c("SITE_ID", "VISIT_NO","LINE", "TAG", 
-                               "VOUCH_NUM", "NAME_COM")],
+                               "VOUCH_NUM", "VOUCH_PHOTO", "VOUCH_UNK", 
+                               "VOUCH_QA", "NAME_COM")],
                     LAB_QA[,c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER", 
                      "COMMON.NAME", "COMMENTS")], 
            by.y =c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER"), 
@@ -174,10 +174,32 @@ MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" &
 
 differences <- MergedData[trimws(toupper(MergedData$COMMON.NAME)) != 
                             trimws(toupper(MergedData$NAME_COM)),]
+
+# add photo directory. 
+differences$PHOTO_Directory <- NA
+for (i in differences[differences$VOUCH_PHOTO=="Y","SITE_ID"]){
+  # i <- "NRS23_WA_10011"
+  PhotoFiles <- grep(i, list.files("Field Crews", recursive = T), value = T)
+  directory <- unique(unlist(lapply(strsplit(PhotoFiles,"/"),
+                       function(x) paste(x[-length(x)], collapse = "/"))))
+  
+  if(length(directory)>1){
+    directory <- paste(directory, collapse = " - OR - ")
+  }
+  
+  if(length(directory)==1){
+    differences[differences$SITE_ID == i & 
+                  differences$VOUCH_PHOTO=="Y", "PHOTO_Directory"] <- directory
+  }
+}
+
+
 ##################################################
 
 # Pause here: tempted to update all differences to name provided by taxonomist, 
 # meeting with RM and LR for thoughts...
+# Lou is going to look through the records and provide a new column to indicate
+# whether QA taxonomist, Field taxonomist or further reconciliation is needed
 write.csv(differences,"Fish_QA_MBI_2023_11_30_wField_ID_Differences.csv")
 
 MergedData[toupper(MergedData$COMMON.NAME) == MergedData$NAME_COM,]
@@ -190,17 +212,16 @@ MergedData[toupper(MergedData$COMMON.NAME) == MergedData$NAME_COM,]
 
 
 
-
 # Update direct matches. Records that have a match in NRSA taxa list 
 #######
 # Add NAME_COM_UPR, upper case of NAME_COM for matching with final name
 fish_col <- fish_col%>%
   mutate(NAME_COM_UPR = toupper(NAME_COM), 
-         FINAL_NAME = "")
+         NAME_COM_CORRECTED = "")
 
-# Updates FINAL_NAME in fish collection file with matching NRSA 1819 FINAL_NAME 
+# Updates NAME_COM_CORRECTED in fish collection file with matching NRSA 1819 NAME_COM_CORRECTED 
 ind <- fish_col$NAME_COM_UPR %in% nars_taxa_list$FINAL_NAME
-fish_col$FINAL_NAME[ind] <- fish_col$NAME_COM_UPR[ind]
+fish_col$NAME_COM_CORRECTED[ind] <- fish_col$NAME_COM_UPR[ind]
 ##########################################################
 dim(fish_col)
 
@@ -209,10 +230,10 @@ dim(fish_col)
 # Used grep function to compare the taxa with 
 # "unknown" entry in NAME_COM 
 #######
-# Sites from lower 48 with NAME_COM but no matching FINAL_NAME
+# Sites from lower 48 with NAME_COM but no matching NAME_COM_CORRECTED
 # from NRSA Autecology dataset -- all Selawik TOTAL = 0
 NewFish <- fish_col %>%
-  filter(FINAL_NAME == "" & 
+  filter(NAME_COM_CORRECTED == "" & 
            NAME_COM != "" & 
            !STATE%in%c("Selawik", "GU")&
            grepl("2023", DATE_COL))%>% #filters out 2024 data
@@ -227,34 +248,34 @@ sort(grep("UNKNOWN|SP.$|UNIDENTIFIED", NewFish$NAME_COM_UPR, value = T))
 sort(grep("UNKNOWN", nars_taxa_list$FINAL_NAME, value = T))
 
 #######
-fish_col[fish_col$NAME_COM_UPR == "" & fish_col$TOTAL >0,"FINAL_NAME"] <- "UNKNOWN"
+fish_col[fish_col$NAME_COM_UPR == "" & fish_col$HAS_COUNT=="Y", "NAME_COM_CORRECTED"] <- "UNKNOWN"
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "CARPIODES SP.", 
-               FINAL_NAME = "UNKNOWN CARPIODES")
+               NAME_COM_CORRECTED = "UNKNOWN CARPIODES")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "HYBOGNATHUS SP.", 
-               FINAL_NAME = "UNKNOWN HYBOGNATHUS")
+               NAME_COM_CORRECTED = "UNKNOWN HYBOGNATHUS")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "ICHTHYOMYZON SP.", 
-               FINAL_NAME = "UNKNOWN ICHTHYOMYZON")
+               NAME_COM_CORRECTED = "UNKNOWN ICHTHYOMYZON")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "ICTIOBUS SP.", 
-               FINAL_NAME = "UNKNOWN ICTIOBUS")
+               NAME_COM_CORRECTED = "UNKNOWN ICTIOBUS")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = c("UNKNOWN REDHORSE",
                               "UNIDENTIFIED MOXOSTOMA", 
                               "MOXOSTOMA SP."), 
-               FINAL_NAME = "UNKNOWN MOXOSTOMA")
+               NAME_COM_CORRECTED = "UNKNOWN MOXOSTOMA")
 
 # Unknown should be recorded to family 
 # UNKNOWN CATOSTOMIDAE -- not change here. 
@@ -262,12 +283,12 @@ fish_col <- fish_col %>%
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = c("UNIDENTIFIED SUCKER"), 
-               FINAL_NAME = "UNKNOWN SUCKER")
+               NAME_COM_CORRECTED = "UNKNOWN SUCKER")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = c("UNKNOWN 3"), 
-               FINAL_NAME = "UNKNOWN")
+               NAME_COM_CORRECTED = "UNKNOWN")
 
 
 # Unknown should be recorded to family 
@@ -277,12 +298,12 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = c("UNKNOWN CYPRINDS", 
                               "UNKNOWN CYPRINID"), 
-               FINAL_NAME = "UNKNOWN MINNOW")
+               NAME_COM_CORRECTED = "UNKNOWN MINNOW")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "UNKNOWN SCULPIN", 
-               FINAL_NAME = "UNKNOWN COTTUS")
+               NAME_COM_CORRECTED = "UNKNOWN COTTUS")
 
 #############################################
 
@@ -291,12 +312,12 @@ fish_col <- fish_col %>%
 # identify field IDs with misspellings or extra spaces
 
 # Inspect fuzzy results update accordingly. The list names is the NAME_COM
-# The elements are the 15 closest matching records in FINAL_NAME Dataset
+# The elements are the 15 closest matching records in NAME_COM_CORRECTED Dataset
 # Any name that was not obvious was left unchanged 
 #######
 #update taxa with missing taxa names
 NewFish <- fish_col %>%
-  filter(FINAL_NAME=="" & 
+  filter(NAME_COM_CORRECTED=="" & 
            NAME_COM!="" & 
            !STATE%in%c("Selawik","GU") &
            grepl("2023", DATE_COL)) %>%
@@ -304,21 +325,21 @@ NewFish <- fish_col %>%
   distinct()
 
 #NRSA taxa list as vector
-NARS_FINAL_NAME <- nars_taxa_list$FINAL_NAME
+NARS_NAME_COM_CORRECTED <- nars_taxa_list$FINAL_NAME
 
 Fuzzy_result <- sapply(NewFish$NAME_COM_UPR, 
                        function(x){stringdist(x, 
-                                              NARS_FINAL_NAME, 
+                                              NARS_NAME_COM_CORRECTED, 
                                               method = 'cosine', 
                                               q = 1)})
-rownames(Fuzzy_result) <- NARS_FINAL_NAME
+rownames(Fuzzy_result) <- NARS_NAME_COM_CORRECTED
 #selects the 15 NRSA taxa with closest match
 Fuzzy_result <- apply(Fuzzy_result, 2, 
                       function(x) list(names(x)[order(x)[1:15]]))
 #############################################
 
 
-# Visually inspect NAME_COM to closest matching FINAL_NAME in NRSA
+# Visually inspect NAME_COM to closest matching NAME_COM_CORRECTED in NRSA
 # autecology dataset. 
 Fuzzy_result
 
@@ -327,62 +348,62 @@ Fuzzy_result
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "LOG PERCH", 
-               FINAL_NAME = "LOGPERCH")
+               NAME_COM_CORRECTED = "LOGPERCH")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "WESTERN MOSQUITO FISH", 
-               FINAL_NAME = "WESTERN MOSQUITOFISH")
+               NAME_COM_CORRECTED = "WESTERN MOSQUITOFISH")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BLUNTNOSE MINNOW.", 
-               FINAL_NAME = "BLUNTNOSE MINNOW")
+               NAME_COM_CORRECTED = "BLUNTNOSE MINNOW")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "ORANGE-SPOTTED SUNFISH", 
-               FINAL_NAME = "ORANGESPOTTED SUNFISH")
+               NAME_COM_CORRECTED = "ORANGESPOTTED SUNFISH")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "LAHONTAN REDSIDE SHINER", 
-               FINAL_NAME = "LAHONTAN REDSIDE")
+               NAME_COM_CORRECTED = "LAHONTAN REDSIDE")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "LONG NOSE DACE", 
-               FINAL_NAME = "LONGNOSE DACE")
+               NAME_COM_CORRECTED = "LONGNOSE DACE")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "YELLOWSTONE CUTTHROAT", 
-               FINAL_NAME = "YELLOWSTONE CUTTHROAT TROUT")
+               NAME_COM_CORRECTED = "YELLOWSTONE CUTTHROAT TROUT")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "TIGER MUSKY", 
-               FINAL_NAME = "TIGER MUSKELLUNGE")
+               NAME_COM_CORRECTED = "TIGER MUSKELLUNGE")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "RIVER CARP SUCKER", 
-               FINAL_NAME = "RIVER CARPSUCKER")
+               NAME_COM_CORRECTED = "RIVER CARPSUCKER")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "COMMON  CARP", 
-               FINAL_NAME = "COMMON CARP")
+               NAME_COM_CORRECTED = "COMMON CARP")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "SHORT NOSE GAR", 
-               FINAL_NAME = "SHORTNOSE GAR")
+               NAME_COM_CORRECTED = "SHORTNOSE GAR")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "SNUBNOSE  DARTER", 
-               FINAL_NAME = "SNUBNOSE DARTER")
+               NAME_COM_CORRECTED = "SNUBNOSE DARTER")
 ##############################################
 
 # Checking names against 1819 survey 
@@ -391,7 +412,7 @@ fish_col <- fish_col %>%
 #####
 # identified unmatched taxa, with state 
 NewFish <- fish_col %>%
-  filter(FINAL_NAME=="" & 
+  filter(NAME_COM_CORRECTED=="" & 
            NAME_COM!="" & 
            !STATE %in% c("Selawik", "GU")&
            grepl("2023", DATE_COL))%>%
@@ -403,32 +424,32 @@ NewFish <- fish_col %>%
 # Each list element is a species/state combination
 Fuzzy_list <- list()
 for(nf in 1:nrow(NewFish)){
-  
+  #nf<-1
   unknsp <- NewFish[nf,]
   lname <- paste0(unknsp, collapse = "_")
   
   #Extract all records from the state where unknown was recorded
-  #used a comparision vector
-  NARS_FINAL_NAME_1819 <- nars_taxa_col_1819 %>%
+  #used a comparison vector
+  NARS_NAME_COM_CORRECTED_1819 <- nars_taxa_col_1819 %>%
     filter(STATE %in% unknsp$STATE)%>%
     select(c(FINAL_NAME, STATE))%>%
     distinct()
   
-  #head(grep("PEARL DACE", NARS_FINAL_NAME_1819[,1],))
+  #head(grep("PEARL DACE", NARS_NAME_COM_CORRECTED_1819[,1],))
   
   Fuzzy_result <- sapply(unknsp$NAME_COM_UPR, 
-                         function(x){stringdist(x, NARS_FINAL_NAME_1819$FINAL_NAME, 
+                         function(x){stringdist(x, NARS_NAME_COM_CORRECTED_1819$FINAL_NAME, 
                                                 method = 'cosine', q = 1)})
   
-  rownames(Fuzzy_result) <- NARS_FINAL_NAME_1819$FINAL_NAME
+  rownames(Fuzzy_result) <- NARS_NAME_COM_CORRECTED_1819$FINAL_NAME
   
-  Fuzzy_list[[lname]]<-rownames(Fuzzy_result)[order(Fuzzy_result[,1])[1:15]]
+  Fuzzy_list[[lname]] <- rownames(Fuzzy_result)[order(Fuzzy_result[,1])[1:15]]
 }
 ##############################################
 
 # Inspect results.  Each list element is named with the NAME_COM and STATE 
 # abbreviation where it was collected. The values in each list element are 
-# the most similar FINAL_Names for each NAME_COM collected within the state 
+# the most similar NAME_COM_CORRECTEDs for each NAME_COM collected within the state 
 Fuzzy_list
 
 # update results based on taxa collected in the state
@@ -438,7 +459,7 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "PEARL DACE",
                STATE = "WI",
-               FINAL_NAME = "NORTHERN PEARL DACE")
+               NAME_COM_CORRECTED = "NORTHERN PEARL DACE")
 
 # checked via range maps, Pearl Dace was not collected previously in SD, 
 # but range maps from NatureServe suggest that its Northern
@@ -446,39 +467,39 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "PEARL DACE",
                STATE = "ND",
-               FINAL_NAME = "NORTHERN PEARL DACE")
+               NAME_COM_CORRECTED = "NORTHERN PEARL DACE")
 
 # only minnow from IL
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BLUNTNOSE",
                STATE = "IL",
-               FINAL_NAME = "BLUNTNOSE MINNOW")
+               NAME_COM_CORRECTED = "BLUNTNOSE MINNOW")
 
 # only Allegeny collected previously
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "PEARL DACE",
                STATE = "VT",
-               FINAL_NAME = "ALLEGHENY PEARL DACE")
+               NAME_COM_CORRECTED = "ALLEGHENY PEARL DACE")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "CRAPPIE",
                STATE = "MT",
-               FINAL_NAME = "BLACK CRAPPIE")
+               NAME_COM_CORRECTED = "BLACK CRAPPIE")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "PIKEMINNOW",
                STATE = "ID",
-               FINAL_NAME = "NORTHERN PIKEMINNOW")
+               NAME_COM_CORRECTED = "NORTHERN PIKEMINNOW")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BLUNT NOSE WITH HEAD INJURY",
                STATE = "ND",
-               FINAL_NAME = "BLUNTNOSE MINNOW")
+               NAME_COM_CORRECTED = "BLUNTNOSE MINNOW")
 
 # Ozark Darter is not listed in AFS. It is part of the Orangethroat Darter
 # Etheostoma spectabile complex -- Formerly there were five named 
@@ -502,7 +523,7 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "OZARK DARTER",
                STATE = "AR",
-               FINAL_NAME = "ORANGETHROAT DARTER")
+               NAME_COM_CORRECTED = "ORANGETHROAT DARTER")
 
 # CA species --- kalamath and coastal rainbows... 
 # most of these are subspecies that were not recognized by AFS. I could add as
@@ -512,31 +533,31 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "CENTRAL CALIFORNIA COAST STEELHEAD",
                STATE = "CA",
-               FINAL_NAME = "RAINBOW TROUT (STEELHEAD)")
+               NAME_COM_CORRECTED = "RAINBOW TROUT (STEELHEAD)")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "KLAMATH MOUNTAIN PROVINCE (STEELHEAD)",
                STATE = "CA",
-               FINAL_NAME = "RAINBOW TROUT (STEELHEAD)")
+               NAME_COM_CORRECTED = "RAINBOW TROUT (STEELHEAD)")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "KLAMATH SPECKLED DACE",
                STATE = "CA",
-               FINAL_NAME = "SPECKLED DACE")
+               NAME_COM_CORRECTED = "SPECKLED DACE")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "LOWER KLAMATH MARBLED SCULPIN",
                STATE = "CA",
-               FINAL_NAME = "MARBLED SCULPIN")
+               NAME_COM_CORRECTED = "MARBLED SCULPIN")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "COASTAL RAINBOW TROUT",
                STATE = "CA",
-               FINAL_NAME = "RAINBOW TROUT")
+               NAME_COM_CORRECTED = "RAINBOW TROUT")
 ########################################################
 
 # Check remaining names against AFS accepted common Names 
@@ -544,7 +565,7 @@ fish_col <- fish_col %>%
 # be a new record in NRSA List.
 #####
 NewFish <- fish_col %>%
-  filter(FINAL_NAME=="" & 
+  filter(NAME_COM_CORRECTED=="" & 
            NAME_COM!="" & 
            !STATE%in%c("Selawik", "GU")&
            grepl("2023", DATE_COL))%>%
@@ -561,56 +582,56 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "PINFISH",
                STATE = "LA",
-               FINAL_NAME = "PINFISH -- NR")
+               NAME_COM_CORRECTED = "PINFISH -- NR")
 
 # SHEEPSHEAD (MARINE)    LA -- Archosargus probatocephalus
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "SHEEPSHEAD (MARINE)",
                STATE = "LA",
-               FINAL_NAME = "SHEEPSHEAD (MARINE) -- NR")
+               NAME_COM_CORRECTED = "SHEEPSHEAD (MARINE) -- NR")
 
 # STRIPED MOJARRA -- Eugerres plumieri
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "STRIPED MOJARRA",
                STATE = "FL",
-               FINAL_NAME = "STRIPED MOJARRA -- NR")
+               NAME_COM_CORRECTED = "STRIPED MOJARRA -- NR")
 
 # BAYOU TOPMINNOW    MS -- Fundulus nottii
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BAYOU TOPMINNOW",
                STATE = "MS",
-               FINAL_NAME = "BAYOU TOPMINNOW -- NR")
+               NAME_COM_CORRECTED = "BAYOU TOPMINNOW -- NR")
 
 # BUTTERFLY PEACOCK BASS -- Cichla ocellaris
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "BUTTERFLY PEACOCK BASS",
                STATE = "FL",
-               FINAL_NAME = "BUTTERFLY PEACOCK BASS -- NR")
+               NAME_COM_CORRECTED = "BUTTERFLY PEACOCK BASS -- NR")
 
 # HEADWATER DARTER    KY -- Etheostoma lawrencei
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "HEADWATER DARTER",
                STATE = "KY",
-               FINAL_NAME = "HEADWATER DARTER -- NR")
+               NAME_COM_CORRECTED = "HEADWATER DARTER -- NR")
 
 # ORANGEFIN MADTOM    VA -- Noturus gilberti 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "ORANGEFIN MADTOM",
                STATE = "VA",
-               FINAL_NAME = "ORANGEFIN MADTOM -- NR")
+               NAME_COM_CORRECTED = "ORANGEFIN MADTOM -- NR")
 
 # UNKNOWN CATFISH    FL -- UNKNOWN ICTALURIDAE 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "UNKNOWN CATFISH",
                STATE = "FL",
-               FINAL_NAME = "UNKNOWN CATFISH -- NR")
+               NAME_COM_CORRECTED = "UNKNOWN CATFISH -- NR")
 
 # "UNKNOWN SPOT FIN SMALL" is this spotfin shiner? --- 
 # SHEEPSHEAD    LA -- Assuming that this is the minnow bc above
@@ -621,21 +642,21 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "COMMON SHINER X HORNYHEAD CHUB",
                STATE = "MI",
-               FINAL_NAME = "COMMON SHINER X HORNYHEAD CHUB -- NR")
+               NAME_COM_CORRECTED = "COMMON SHINER X HORNYHEAD CHUB -- NR")
 
 #REDEAR SUNFISH X REDBREAST SUNFISH    VA
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "REDEAR SUNFISH X REDBREAST SUNFISH",
                STATE = "VA",
-               FINAL_NAME = "REDBREAST SUNFISH X REDEAR SUNFISH -- NR")
+               NAME_COM_CORRECTED = "REDBREAST SUNFISH X REDEAR SUNFISH -- NR")
 
 #REDEYE BASS X ALABAMA BASS    SC
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "REDEYE BASS X ALABAMA BASS",
                STATE = "SC",
-               FINAL_NAME = "ALABAMA BASS X REDEYE BASS -- NR")
+               NAME_COM_CORRECTED = "ALABAMA BASS X REDEYE BASS -- NR")
 
 # CHUB A    VA -- most state records seem to be part of Nocomis sp. but cheek chub is Semoltilus
 # assigning as "UNKNOWN MINNOW" aka Cyprinidae family
@@ -643,47 +664,47 @@ fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "CHUB A",
                STATE = "VA",
-               FINAL_NAME = "UNKNOWN NOCOMIS -- NR")
+               NAME_COM_CORRECTED = "UNKNOWN NOCOMIS -- NR")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "MADTOM",
                STATE = "VA",
-               FINAL_NAME = "UNKNOWN NOTURUS")
+               NAME_COM_CORRECTED = "UNKNOWN NOTURUS")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "MADTOM",
                STATE = "GA",
-               FINAL_NAME = "UNKNOWN NOTURUS")
+               NAME_COM_CORRECTED = "UNKNOWN NOTURUS")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "SHINER B",
                STATE = "VA",
-               FINAL_NAME = "UNKNOWN SHINER")
+               NAME_COM_CORRECTED = "UNKNOWN SHINER")
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "SHINER A",
                STATE = "VA",
-               FINAL_NAME = "UNKNOWN SHINER")
+               NAME_COM_CORRECTED = "UNKNOWN SHINER")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "CYPRINELLA A",
                STATE = "VA",
-               FINAL_NAME = "UNKNOWN CYPRINELLA")
+               NAME_COM_CORRECTED = "UNKNOWN CYPRINELLA")
 
 ################################################
 
 
-# append TAXA_ID to fish collection file by merging with FINAL_NAME
+# append TAXA_ID to fish collection file by merging with NAME_COM_CORRECTED
 #########
 fish_col <- merge(fish_col, 
       unique(nars_taxa_list[,c("TAXA_ID","FINAL_NAME")]),
-      by = "FINAL_NAME", 
+      by.x = "NAME_COM_CORRECTED", by.y = "FINAL_NAME",
       all.x = T)
-fish_col[fish_col$FINAL_NAME=="UNKNOWN",]
+fish_col[fish_col$NAME_COM_CORRECTED=="UNKNOWN",]
 # Check all rows are accounted for
 nrow(fish_col_original)==nrow(fish_col)
 
@@ -694,18 +715,28 @@ names(fish_col)
 write.csv(fish_col, "Reconciled_Taxa_Names.csv")
 
 z<-fish_col[fish_col$NAME_COM==""&fish_col$HAS_COUNT=="Y",]
-# Query instances where NAME_COM is different from FINAL_NAME for 2023 
+# Query instances where NAME_COM is different from NAME_COM_CORRECTED for 2023 
 # collections. This list can be shared with partners to see of the 
 # name change is appropriate. 
 Check_Taxa <- fish_col%>%
   filter(!STATE%in%c("Selawik", "GU")&
-           NAME_COM_UPR != FINAL_NAME|str_detect(FINAL_NAME, "UNKNOWN")&#FINAL_NAME=="UNKNOWN"&
-           TOTAL > 0 & 
+           NAME_COM_UPR != NAME_COM_CORRECTED|str_detect(NAME_COM_CORRECTED, "UNKNOWN")&#NAME_COM_CORRECTED=="UNKNOWN"&
+           HAS_COUNT=="Y" & 
            grepl("2023", DATE_COL))%>%
-  select(c("SITE_ID", "VISIT_NO", "DATE_COL", "NAME_COM", "FINAL_NAME",
-           "VOUCH_PHOTO", "VOUCH_UNK", "VOUCH_QA"))
+  select(c("SITE_ID", "VISIT_NO", "DATE_COL", "NAME_COM", "NAME_COM_CORRECTED",
+           "VOUCH_PHOTO", "VOUCH_UNK", "VOUCH_QA","TAG","LINE"))
 
+wVOUCH <- Check_Taxa%>%
+  filter(VOUCH_PHOTO=="Y"|VOUCH_UNK=="Y"|VOUCH_QA=="Y")
 
+LAB_QA <- read.csv("Fish_QA_MBI_2023_11_30.csv")
+View(LAB_QA)
+wVOUCH[!wVOUCH$SITE_ID%in%LAB_QA$SITE.ID,]
+
+wVOUCH[wVOUCH$SITE_ID%in%LAB_QA$SITE.ID,]
+
+View(LAB_QA[LAB_QA$SITE.ID=="NRS23_PA_10029",])
+NRS23_CA_10072
 
 write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023.csv", row.names = F)
 
