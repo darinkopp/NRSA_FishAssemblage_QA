@@ -19,6 +19,7 @@
 # accepted names are to be added as new records in NRSA database and need autecology 
 # information
 
+rm(list=ls())
 library(tidyverse)
 library(sf)
 library(tmap)
@@ -37,9 +38,7 @@ nars_taxa_list <- paste0(dir_NRSA_1819, "allNRSA_fishTaxa.tab") %>%
   read.table(sep = "\t", header = T)
 
 nars_taxa_col_1819 <-  paste0(dir_NRSA_1819, "nrsa1819_fishCount_newUid.tab") %>%
-  read.table(sep = "\t", header = T) %>%
-  select(STATE)%>%
-  distinct()
+  read.table(sep = "\t", header = T) 
 #######################
 
 # Site info file -- locations for 2023-24
@@ -51,26 +50,42 @@ site.info <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
 
-# lon83 was negative for handpicked sites, 
-# KB corrected in next version
-site.info[!is.na(site.info[,c("LON_DD83")]) & site.info[,c("LON_DD83")]>0, "LON_DD83"] <- 
-  site.info[!is.na(site.info[,c("LON_DD83")]) & site.info[,c("LON_DD83")]>0, "LON_DD83"] * -1
 #######################
 
-# Fish Files
-# removed any 2024 samples because they are not completed with the
-# identification. NRS23-Selawik-XX has dashes instead of underscores-- Not sure 
+# Fish Collection Files
+# NRS23-Selawik-XX has dashes instead of underscores-- Not sure 
 # if this is a problem, Fish samples from NM and CO are missing.
 ######
 fish_col <- dir_NRSA_2324%>%
   paste0("/raw/tabfiles/nrsa2324_fishcollectionWide_fish.tab") %>%
-  read.table(sep = "\t", header = T)%>%
-  #filter(grepl("2023", DATE_COL)) %>% # filters 2024 which may have incomplete identification  
+  read.table(sep = "\t", header = T) %>%
   mutate(SITE_ID_Mod = gsub("-", "_", SITE_ID)) %>% # NRS23-Selawik-09 has dashes?
   mutate(STATE = unlist(lapply(strsplit(SITE_ID_Mod,"_"), "[[", 2))) %>% 
   rowwise()%>%
-  mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm = T)>0,
-                                "Y","N"))
+  mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19), 
+                                na.rm = T) > 0, "Y","N"))
+
+# add name of fish taxonomist
+FishTaxonomist <- dir_NRSA_2324%>%
+  paste0("/raw/tabfiles/nrsa2324_crew.tab") %>%
+  read.table(sep = "\t", header = T) %>%
+  filter(PARAMETER == "FISH_TAXONOMIST") %>%
+  mutate(FISH_TAXONOMIST = RESULT) %>%
+  select(UID,FISH_TAXONOMIST)
+
+#anyDuplicated(FishTaxonomist[,c("UID")])  
+fish_col <- merge(fish_col, FishTaxonomist, by = "UID", all.x = T)
+
+FISH_COMMENTS <- dir_NRSA_2324 %>%
+  paste0("/raw/tabfiles/nrsa2324_comments.tab") %>%
+  read.table(sep = "\t", header = T) %>%
+  filter(grepl("FISH_COMMENT", FLAG))
+
+fish_col <- merge(fish_col, 
+                  FISH_COMMENTS[,c("SITE_ID","VISIT_NO","FLAG","COMMENT")], 
+                  by = c("SITE_ID","VISIT_NO","FLAG"), 
+                  all.x = T)
+
 
 # Fish voucher specimens? 
 dir_NRSA_2324%>%
@@ -79,10 +94,16 @@ dir_NRSA_2324%>%
   filter(!is.na(SAMPLE_ID))%>%
   dim()
 
+dir_NRSA_2324%>%
+  paste0("/raw/tabfiles/nrsa2324_fishinfoWide.tab") %>%
+  read.table(sep = "\t", header = T)%>%
+  select(CREW_LEAD,CREW_ORG)%>%
+  distinct()
+  
 #######################
 
 
-# Function to update Fish Collection Table directly
+# Function to update Fish Collection
 # the inputs are:
 # FIELD_Name = NAME_COM (name given in field)
 # NAME_COM_CORRECTED = the reconciled name (typically 1819 NAME_COM_CORRECTED)
@@ -99,7 +120,6 @@ updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
   return(df)
 }
 
-
 ################################################################################
 # reconcile names
 ################################################################################
@@ -107,8 +127,8 @@ updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
 # save original file as check to ensure all records are accounted for 
 fish_col_original <- fish_col
 
-
-# Compare names provided by field taxonomist to names provided by the lab
+# Compare names of voucher specimens provided by field taxonomist to 
+# names provided by the lab QC taxonomist
 #############
 # Site, Visit, Tag for QA file --- the objective here is to pull out the list
 # with matching records. Biggest challenge was that crews sometimes did not 
@@ -161,19 +181,21 @@ fish_col[fish_col$SITE_ID == "NRS23_NY_HP002" &
 # Merge LAB QA with collection file. HAS_COUNT indicates that field crews 
 # recorded counts for the taxa they collected. is.na(fish_col$TAG) removed 
 # duplicate values 
-MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" & 
-                               !is.na(fish_col$TAG),
+
+MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" & !is.na(fish_col$TAG),
                              c("SITE_ID", "VISIT_NO","LINE", "TAG", 
                                "VOUCH_NUM", "VOUCH_PHOTO", "VOUCH_UNK", 
-                               "VOUCH_QA", "NAME_COM")],
+                               "VOUCH_QA", "NAME_COM", "FISH_TAXONOMIST")],
                     LAB_QA[,c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER", 
-                     "COMMON.NAME", "COMMENTS")], 
+                     "COMMON.NAME", "TAXONOMIST.NAME","COMMENTS")], 
            by.y =c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER"), 
            by.x =  c("SITE_ID", "VISIT_NO", "TAG"), 
            all.y = T)
 
+
 differences <- MergedData[trimws(toupper(MergedData$COMMON.NAME)) != 
                             trimws(toupper(MergedData$NAME_COM)),]
+
 
 # add photo directory. 
 differences$PHOTO_Directory <- NA
@@ -192,15 +214,14 @@ for (i in differences[differences$VOUCH_PHOTO=="Y","SITE_ID"]){
                   differences$VOUCH_PHOTO=="Y", "PHOTO_Directory"] <- directory
   }
 }
-
+View(differences)
 
 ##################################################
 
-# Pause here: tempted to update all differences to name provided by taxonomist, 
-# meeting with RM and LR for thoughts...
-# Lou is going to look through the records and provide a new column to indicate
-# whether QA taxonomist, Field taxonomist or further reconciliation is needed
-write.csv(differences,"Fish_QA_MBI_2023_11_30_wField_ID_Differences.csv")
+# Pause here: RM, LR, and DK agreed for 2023 that the name provided by 
+# field taxonomist is most likely correct. We will have to figure out a plan 
+# moving forward with 2024 data. 
+write.csv(differences, "Fish_QA_MBI_2023_11_30_wField_ID_Differences.csv")
 
 MergedData[toupper(MergedData$COMMON.NAME) == MergedData$NAME_COM,]
 
@@ -225,6 +246,11 @@ fish_col$NAME_COM_CORRECTED[ind] <- fish_col$NAME_COM_UPR[ind]
 ##########################################################
 dim(fish_col)
 
+# add NO FISH when no count--- In some instances when names are updated by field 
+# taxonomists, the count is changed to zero. Updating these records to NO FISH.  
+# if other fish were collected from a site then this value will be dropped. This 
+# is accomplished in the count validation below
+fish_col[fish_col$HAS_COUNT=="N","NAME_COM_CORRECTED"] <- "NO FISH"
 
 # Check unknown taxa: 
 # Used grep function to compare the taxa with 
@@ -233,11 +259,10 @@ dim(fish_col)
 # Sites from lower 48 with NAME_COM but no matching NAME_COM_CORRECTED
 # from NRSA Autecology dataset -- all Selawik TOTAL = 0
 NewFish <- fish_col %>%
-  filter(NAME_COM_CORRECTED == "" & 
-           NAME_COM != "" & 
-           !STATE%in%c("Selawik", "GU")&
+  filter(NAME_COM_CORRECTED == "" & NAME_COM != "" & 
+           #!STATE%in%c("Selawik", "GU")&
            grepl("2023", DATE_COL))%>% #filters out 2024 data
-  select(NAME_COM_UPR) %>%
+  select(NAME_COM_UPR, COMMENT) %>%
   distinct()
 ###########################################################
 
@@ -255,10 +280,10 @@ fish_col <- fish_col %>%
                FIELD_Name = "CARPIODES SP.", 
                NAME_COM_CORRECTED = "UNKNOWN CARPIODES")
 
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "HYBOGNATHUS SP.", 
-               NAME_COM_CORRECTED = "UNKNOWN HYBOGNATHUS")
+#fish_col <- fish_col %>%
+ # updateRecord(df = ., 
+  #             FIELD_Name = "HYBOGNATHUS SP.", 
+   #            NAME_COM_CORRECTED = "UNKNOWN HYBOGNATHUS")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -292,13 +317,12 @@ fish_col <- fish_col %>%
 
 
 # Unknown should be recorded to family 
-# UNKNOWN CATOSTOMIDAE -- not change here
 # should be UNKNOWN CYPRINIDAE ???
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = c("UNKNOWN CYPRINDS", 
-                              "UNKNOWN CYPRINID"), 
-               NAME_COM_CORRECTED = "UNKNOWN MINNOW")
+#fish_col <- fish_col %>%
+ # updateRecord(df = ., 
+  #             FIELD_Name = c("UNKNOWN CYPRINDS", 
+   #                           "UNKNOWN CYPRINID"), 
+    #           NAME_COM_CORRECTED = "UNKNOWN MINNOW")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -321,7 +345,7 @@ NewFish <- fish_col %>%
            NAME_COM!="" & 
            !STATE%in%c("Selawik","GU") &
            grepl("2023", DATE_COL)) %>%
-  select(NAME_COM_UPR) %>%
+  select(NAME_COM_UPR, COMMENT) %>%
   distinct()
 
 #NRSA taxa list as vector
@@ -347,23 +371,8 @@ Fuzzy_result
 ######
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "LOG PERCH", 
-               NAME_COM_CORRECTED = "LOGPERCH")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "WESTERN MOSQUITO FISH", 
-               NAME_COM_CORRECTED = "WESTERN MOSQUITOFISH")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "BLUNTNOSE MINNOW.", 
-               NAME_COM_CORRECTED = "BLUNTNOSE MINNOW")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "ORANGE-SPOTTED SUNFISH", 
-               NAME_COM_CORRECTED = "ORANGESPOTTED SUNFISH")
+               FIELD_Name = "SNUBNOSE  DARTER", 
+               NAME_COM_CORRECTED = "SNUBNOSE DARTER")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -372,23 +381,8 @@ fish_col <- fish_col %>%
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "LONG NOSE DACE", 
-               NAME_COM_CORRECTED = "LONGNOSE DACE")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "YELLOWSTONE CUTTHROAT", 
-               NAME_COM_CORRECTED = "YELLOWSTONE CUTTHROAT TROUT")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "TIGER MUSKY", 
-               NAME_COM_CORRECTED = "TIGER MUSKELLUNGE")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "RIVER CARP SUCKER", 
-               NAME_COM_CORRECTED = "RIVER CARPSUCKER")
+               FIELD_Name = "ORANGE-SPOTTED SUNFISH", 
+               NAME_COM_CORRECTED = "ORANGESPOTTED SUNFISH")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -397,13 +391,51 @@ fish_col <- fish_col %>%
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
+               FIELD_Name = "RIVER CARP SUCKER", 
+               NAME_COM_CORRECTED = "RIVER CARPSUCKER")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "TIGER MUSKY", 
+               NAME_COM_CORRECTED = "TIGER MUSKELLUNGE")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "YELLOWSTONE CUTTHROAT", 
+               NAME_COM_CORRECTED = "YELLOWSTONE CUTTHROAT TROUT")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "LONG NOSE DACE", 
+               NAME_COM_CORRECTED = "LONGNOSE DACE")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "LOG PERCH", 
+               NAME_COM_CORRECTED = "LOGPERCH")
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "WESTERN MOSQUITO FISH", 
+               NAME_COM_CORRECTED = "WESTERN MOSQUITOFISH")
+
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "BLUNTNOSE MINNOW.", 
+               NAME_COM_CORRECTED = "BLUNTNOSE MINNOW")
+
+
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
                FIELD_Name = "SHORT NOSE GAR", 
                NAME_COM_CORRECTED = "SHORTNOSE GAR")
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "SNUBNOSE  DARTER", 
-               NAME_COM_CORRECTED = "SNUBNOSE DARTER")
+               FIELD_Name = "PUMPKINSEED SUNFISH", 
+               NAME_COM_CORRECTED = "PUMPKINSEED")
+
 ##############################################
 
 # Checking names against 1819 survey 
@@ -412,15 +444,15 @@ fish_col <- fish_col %>%
 #####
 # identified unmatched taxa, with state 
 NewFish <- fish_col %>%
-  filter(NAME_COM_CORRECTED=="" & 
+  filter(NAME_COM_CORRECTED == "" & 
            NAME_COM!="" & 
            !STATE %in% c("Selawik", "GU")&
            grepl("2023", DATE_COL))%>%
-  select(NAME_COM_UPR, STATE) %>%
+  select(NAME_COM_UPR, STATE, COMMENT) %>%
   distinct()
 
 # iterate through each species and state combination
-# and used fuzzy matching to identify FINAL_NAMR that is most similar
+# and use fuzzy matching to identify FINAL_NAMR that is most similar
 # Each list element is a species/state combination
 Fuzzy_list <- list()
 for(nf in 1:nrow(NewFish)){
@@ -577,33 +609,6 @@ NewFish
 # Update Names 
 ##########
 # Searched Common name in AFS 2023 
-# PINFISH    LA -- Lagodon rhomboides 
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "PINFISH",
-               STATE = "LA",
-               NAME_COM_CORRECTED = "PINFISH -- NR")
-
-# SHEEPSHEAD (MARINE)    LA -- Archosargus probatocephalus
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "SHEEPSHEAD (MARINE)",
-               STATE = "LA",
-               NAME_COM_CORRECTED = "SHEEPSHEAD (MARINE) -- NR")
-
-# STRIPED MOJARRA -- Eugerres plumieri
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "STRIPED MOJARRA",
-               STATE = "FL",
-               NAME_COM_CORRECTED = "STRIPED MOJARRA -- NR")
-
-# BAYOU TOPMINNOW    MS -- Fundulus nottii
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "BAYOU TOPMINNOW",
-               STATE = "MS",
-               NAME_COM_CORRECTED = "BAYOU TOPMINNOW -- NR")
 
 # BUTTERFLY PEACOCK BASS -- Cichla ocellaris
 fish_col <- fish_col %>%
@@ -612,6 +617,13 @@ fish_col <- fish_col %>%
                STATE = "FL",
                NAME_COM_CORRECTED = "BUTTERFLY PEACOCK BASS -- NR")
 
+# STRIPED MOJARRA -- Eugerres plumieri
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "STRIPED MOJARRA",
+               STATE = "FL",
+               NAME_COM_CORRECTED = "STRIPED MOJARRA -- NR")
+
 # HEADWATER DARTER    KY -- Etheostoma lawrencei
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -619,24 +631,27 @@ fish_col <- fish_col %>%
                STATE = "KY",
                NAME_COM_CORRECTED = "HEADWATER DARTER -- NR")
 
-# ORANGEFIN MADTOM    VA -- Noturus gilberti 
+# SHEEPSHEAD (MARINE)    LA -- Archosargus probatocephalus
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "ORANGEFIN MADTOM",
-               STATE = "VA",
-               NAME_COM_CORRECTED = "ORANGEFIN MADTOM -- NR")
+               FIELD_Name = "SHEEPSHEAD (MARINE)",
+               STATE = "LA",
+               NAME_COM_CORRECTED = "SHEEPSHEAD (MARINE) -- NR")
 
-# UNKNOWN CATFISH    FL -- UNKNOWN ICTALURIDAE 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "UNKNOWN CATFISH",
-               STATE = "FL",
-               NAME_COM_CORRECTED = "UNKNOWN CATFISH -- NR")
+               FIELD_Name = "SHEEPSHEAD",
+               STATE = "LA",
+               NAME_COM_CORRECTED = "SHEEPSHEAD (MARINE) -- NR")
 
-# "UNKNOWN SPOT FIN SMALL" is this spotfin shiner? --- 
-# SHEEPSHEAD    LA -- Assuming that this is the minnow bc above
 
-#Hybrids
+# PINFISH    LA -- Lagodon rhomboides 
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "PINFISH",
+               STATE = "LA",
+               NAME_COM_CORRECTED = "PINFISH -- NR")
+
 #COMMON SHINER X HORNYHEAD CHUB    MI
 fish_col <- fish_col %>%
   updateRecord(df = ., 
@@ -644,12 +659,12 @@ fish_col <- fish_col %>%
                STATE = "MI",
                NAME_COM_CORRECTED = "COMMON SHINER X HORNYHEAD CHUB -- NR")
 
-#REDEAR SUNFISH X REDBREAST SUNFISH    VA
+# BAYOU TOPMINNOW    MS -- Fundulus nottii
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "REDEAR SUNFISH X REDBREAST SUNFISH",
-               STATE = "VA",
-               NAME_COM_CORRECTED = "REDBREAST SUNFISH X REDEAR SUNFISH -- NR")
+               FIELD_Name = "BAYOU TOPMINNOW",
+               STATE = "MS",
+               NAME_COM_CORRECTED = "BAYOU TOPMINNOW -- NR")
 
 #REDEYE BASS X ALABAMA BASS    SC
 fish_col <- fish_col %>%
@@ -658,61 +673,143 @@ fish_col <- fish_col %>%
                STATE = "SC",
                NAME_COM_CORRECTED = "ALABAMA BASS X REDEYE BASS -- NR")
 
-# CHUB A    VA -- most state records seem to be part of Nocomis sp. but cheek chub is Semoltilus
-# assigning as "UNKNOWN MINNOW" aka Cyprinidae family
+# ORANGEFIN MADTOM    VA -- Noturus gilberti 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
-               FIELD_Name = "CHUB A",
+               FIELD_Name = "ORANGEFIN MADTOM",
                STATE = "VA",
-               NAME_COM_CORRECTED = "UNKNOWN NOCOMIS -- NR")
+               NAME_COM_CORRECTED = "ORANGEFIN MADTOM -- NR")
+
+#REDEAR SUNFISH X REDBREAST SUNFISH    VA
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "REDEAR SUNFISH X REDBREAST SUNFISH",
+               STATE = "VA",
+               NAME_COM_CORRECTED = "REDBREAST SUNFISH X REDEAR SUNFISH -- NR")
+
+# "UNKNOWN SPOT FIN SMALL" is this spotfin shiner? --- ZERO COUNT
 
 fish_col <- fish_col %>%
   updateRecord(df = ., 
                FIELD_Name = "MADTOM",
                STATE = "VA",
                NAME_COM_CORRECTED = "UNKNOWN NOTURUS")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "MADTOM",
-               STATE = "GA",
-               NAME_COM_CORRECTED = "UNKNOWN NOTURUS")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "SHINER B",
-               STATE = "VA",
-               NAME_COM_CORRECTED = "UNKNOWN SHINER")
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "SHINER A",
-               STATE = "VA",
-               NAME_COM_CORRECTED = "UNKNOWN SHINER")
-
-fish_col <- fish_col %>%
-  updateRecord(df = ., 
-               FIELD_Name = "CYPRINELLA A",
-               STATE = "VA",
-               NAME_COM_CORRECTED = "UNKNOWN CYPRINELLA")
-
 ################################################
 
+
+
+# Append new taxa to 18/19 taxa list and write. 
+# Mannually update traits information
+NewFish <- grep("-- NR", fish_col$NAME_COM_CORRECTED, value=T)
+
+
+NewFishTbl <- setNames(data.frame(matrix(NA,
+                           length(unique(NewFish)),
+                           dim(nars_taxa_list)[2])),
+         colnames(nars_taxa_list))
+
+NewFishTbl$FINAL_NAME <- substring(unique(NewFish), 0, nchar(unique(NewFish))- 6)
+NewFishTbl$TAXA_ID <- 5212:(5211 + nrow(NewFishTbl))
+#easier to update new records manually.
+#write.csv(NewFishTbl, "newFishTaxonomy_2023.csv")
+NewFish<-read.csv("newFishTaxonomy_2023.csv", row.names = "X")
+nars_taxa_list <- rbind(nars_taxa_list, NewFish)
+
+rmNR <- grep("-- NR", fish_col$NAME_COM_CORRECTED)
+
+fish_col[rmNR, "NAME_COM_CORRECTED"] <- 
+  substring(fish_col[rmNR, "NAME_COM_CORRECTED"], 0, 
+            nchar(fish_col[rmNR, "NAME_COM_CORRECTED"]) - 6)
+
+View(nars_taxa_list)
 
 # append TAXA_ID to fish collection file by merging with NAME_COM_CORRECTED
 #########
 fish_col <- merge(fish_col, 
-      unique(nars_taxa_list[,c("TAXA_ID","FINAL_NAME")]),
+      unique(nars_taxa_list[,c("TAXA_ID", "FINAL_NAME")]),
       by.x = "NAME_COM_CORRECTED", by.y = "FINAL_NAME",
       all.x = T)
-fish_col[fish_col$NAME_COM_CORRECTED=="UNKNOWN",]
+
 # Check all rows are accounted for
-nrow(fish_col_original)==nrow(fish_col)
+nrow(fish_col_original) == nrow(fish_col)
+View(fish_col)
+
+fish_col$NAME_COM_UPR
+
+# create total
+fish_Count <- fish_col
+fish_Count$split.field <- factor(apply(fish_Count[,c("SITE_ID", "VISIT_NO", "NAME_COM_CORRECTED")], 1, paste0, collapse="_"))
+fish_Count <- split(fish_Count, fish_Count$split.field)
+fish_col$PSTL_CODE
+#if there is >record sum counts, othes
+fish_Count <- lapply(fish_Count, function(x) 
+  if(nrow(x) > 1){
+    data.frame(unique(x[,c("PUBLICATION_DATE", "UID", 
+                           "SITE_ID","PSTL_CODE", 
+                           "DATE_COL", "VISIT_NO", 
+                           "NAME_COM_CORRECTED",
+                           "TAXA_ID")]),
+               LINE = paste0(x$LINE, collapse = "_"),
+               t(apply(x[,c("COUNT_6", "COUNT_12", "COUNT_18", 
+                            "COUNT_19", "MORT_CT", "ANOM_COUNT")], 2, sum, na.rm=T)))
+    
+  } else {
+    x[,c("PUBLICATION_DATE", "UID", 
+         "SITE_ID","PSTL_CODE", "DATE_COL",
+         "VISIT_NO", "NAME_COM_CORRECTED",
+         "TAXA_ID", "LINE", "COUNT_6", 
+         "COUNT_12", "COUNT_18", "COUNT_19", 
+         "MORT_CT", "ANOM_COUNT")]
+  })
+
+fish_col[fish_col$SITE_ID=="NRS23_DE_10003",]
+
+fish_Count <- do.call(rbind,fish_Count)
+fish_Count$TOTAL <- apply(fish_Count[,c("COUNT_6", "COUNT_12", "COUNT_18", "COUNT_19")], 1, sum, na.rm = T)
+fish_Count$MORT_CT[is.na(fish_Count$MORT_CT)] <- 0
+# if Dave Peck said that mort count can be unreliable. 
+# When it exceeds the number of fish collected set to NA
+fish_Count[fish_Count$TOTAL < fish_Count$MORT_CT,"MORT_CT"] <- NA
+rownames(fish_Count) <- NULL
+View(fish_Count)
 
 
-names(fish_col)
+siteSplit <- split(fish_Count, list(fish_Count$SITE_ID,fish_Count$VISIT_NO))
+siteSplit <- lapply(siteSplit, function(x) {
+  if(nrow(x)>1 & any(x$TOTAL==0)){x[
+    x$TOTAL!=0,]  
+  } else {x}
+  
+} )
+
+fish_Count <- do.call(rbind,siteSplit)
+
+# removes NA Values in count columns. Assume the NA are zeros 
+fish_Count[is.na(fish_Count[, "COUNT_6"]), "COUNT_6"]<-0
+fish_Count[is.na(fish_Count[, "COUNT_12"]),"COUNT_12"]<-0
+fish_Count[is.na(fish_Count[, "COUNT_18"]),"COUNT_18"]<-0
+fish_Count[is.na(fish_Count[, "COUNT_19"]),"COUNT_19"]<-0
+
+rownames(fish_Count) <- NULL
+# select 
+fish_Count_CONUS <- fish_Count[!fish_Count$PSTL_CODE%in%c("GU","AK",""),]
+fish_Count[fish_Count$PSTL_CODE=="",]
+
+# this record was corrected by field crew and reported to IM. Updating the record in the 
+# database generated a duplicated when cast to wide format. Karen was notified and is working with 
+# suzanne and Michelle to fix. (1/7/2024)
+# nars_taxa_list[nars_taxa_list$FINAL_NAME=="MIMIC SHINER", ]
+fish_Count_CONUS[fish_Count_CONUS$SITE_ID=="NRS23_AL_10024" &
+                   fish_Count_CONUS$LINE==27,c("NAME_COM_CORRECTED","TAXA_ID")] <- c("MIMIC SHINER", "300")
+
+#Drop Visit 99 -- MD resample site deprecated
+fish_Count_CONUS[fish_Count_CONUS$VISIT_NO==99,]
+fish_Count_CONUS <- fish_Count_CONUS[fish_Count_CONUS$VISIT_NO!=99,]
+
+write.csv(fish_Count_CONUS, "fish_Count_CONUS_20250110.csv")
 
 # This is the list of taxa that can be passed through to nativeness/range checks
-write.csv(fish_col, "Reconciled_Taxa_Names.csv")
+write.csv(fish_col, "Reconciled_Taxa_Names_20250107.csv")
 
 z<-fish_col[fish_col$NAME_COM==""&fish_col$HAS_COUNT=="Y",]
 # Query instances where NAME_COM is different from NAME_COM_CORRECTED for 2023 
@@ -720,11 +817,30 @@ z<-fish_col[fish_col$NAME_COM==""&fish_col$HAS_COUNT=="Y",]
 # name change is appropriate. 
 Check_Taxa <- fish_col%>%
   filter(!STATE%in%c("Selawik", "GU")&
-           NAME_COM_UPR != NAME_COM_CORRECTED|str_detect(NAME_COM_CORRECTED, "UNKNOWN")&#NAME_COM_CORRECTED=="UNKNOWN"&
-           HAS_COUNT=="Y" & 
-           grepl("2023", DATE_COL))%>%
-  select(c("SITE_ID", "VISIT_NO", "DATE_COL", "NAME_COM", "NAME_COM_CORRECTED",
-           "VOUCH_PHOTO", "VOUCH_UNK", "VOUCH_QA","TAG","LINE"))
+           NAME_COM_UPR != NAME_COM_CORRECTED |
+           str_detect(NAME_COM_CORRECTED, "UNKNOWN"))%>%  
+           #grepl("2023", DATE_COL)
+  select(c("UID", "SITE_ID", "VISIT_NO", "DATE_COL", 
+           "TAG","LINE", "NAME_COM", 
+           "NAME_COM_CORRECTED","VOUCH_NUM", "VOUCH_PHOTO", 
+           "VOUCH_UNK", "VOUCH_QA", "COUNT_6", "COUNT_12", 
+           "COUNT_18", "COUNT_19","HAS_COUNT", 
+           "FISH_TAXONOMIST", "FLAG", "TAXA_ID", 
+           "COMMENT"))
+
+View(Check_Taxa[Check_Taxa$NAME_COM_CORRECTED != "NO FISH",])
+NRS23_AL_10024
+
+names(fish_col)
+View(merge(Check_Taxa, 
+      FISH_COMMENTS[,c("SITE_ID","VISIT_NO","FLAG","COMMENT")], 
+      by = c("SITE_ID","VISIT_NO","FLAG"), all.x = T))
+
+View(Check_Taxa)
+
+write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023_unknowns.csv", row.names = F)
+
+names(fish_col)
 
 wVOUCH <- Check_Taxa%>%
   filter(VOUCH_PHOTO=="Y"|VOUCH_UNK=="Y"|VOUCH_QA=="Y")
@@ -738,7 +854,7 @@ wVOUCH[wVOUCH$SITE_ID%in%LAB_QA$SITE.ID,]
 View(LAB_QA[LAB_QA$SITE.ID=="NRS23_PA_10029",])
 NRS23_CA_10072
 
-write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023.csv", row.names = F)
+
 
 
 
