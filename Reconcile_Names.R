@@ -127,111 +127,6 @@ updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
 # save original file as check to ensure all records are accounted for 
 fish_col_original <- fish_col
 
-# Compare names of voucher specimens provided by field taxonomist to 
-# names provided by the lab QC taxonomist
-#############
-# Site, Visit, Tag for QA file --- the objective here is to pull out the list
-# with matching records. Biggest challenge was that crews sometimes did not 
-# record the "TAG" of the specimen that they submitted. In most instances 
-# these were resolved using the "LINE" but a few instances required detective
-# work that compared the LAB QA with the SITE in the collection file.
-
-
-# QA Lab file provided by RM. Photo vouchers are found in Field Crews directory  
-LAB_QA <- read.csv("Fish_QA_MBI_2023_11_30.csv")
-
-
-# Adding TAG to sites/specimens that were submitted for voucher
-
-# there were 26 TAG.NUMBER in LAB QA file -- assume line number is appropriate
-fish_col[fish_col$SITE_ID == "NRS23_GA_10041" & is.na(fish_col$TAG),"TAG"] <- 
-  fish_col[fish_col$SITE_ID == "NRS23_GA_10041" & is.na(fish_col$TAG),"LINE"]
-
-# there were 3 TAG.NUMBER in LAB QA file -- assume line number is appropriate
-fish_col[fish_col$SITE_ID=="NRS23_ID_10192"&is.na(fish_col$TAG),"TAG"] <- 
-  fish_col[fish_col$SITE_ID=="NRS23_ID_10192"&is.na(fish_col$TAG),"LINE"]
-
-# there were 4 TAG.NUMBER in LAB QA file -- assume line number is appropriate
-fish_col[fish_col$SITE_ID=="NRS23_MT_10069"&is.na(fish_col$TAG),"TAG"] <-
-  fish_col[fish_col$SITE_ID=="NRS23_MT_10069" & is.na(fish_col$TAG),"LINE"]
-
-# there were 5 TAG.NUMBER in LAB QA file -- assume line number is appropriate. 
-# Site was also revisited, so filter to visit 1 which was included in LAB QA 
-fish_col[fish_col$SITE_ID == "NRS23_MT_10013" & is.na(fish_col$TAG)& 
-           fish_col$VISIT_NO==1, "TAG"] <- 
-  fish_col[fish_col$SITE_ID=="NRS23_MT_10013" & is.na(fish_col$TAG) & 
-             fish_col$VISIT_NO==1, "LINE"]
-
-# -- assume line number is appropriate
-fish_col[fish_col$SITE_ID == "NRS23_TX_10306" & is.na(fish_col$TAG)& 
-           fish_col$VISIT_NO==1, "TAG"] <- 
-  fish_col[fish_col$SITE_ID=="NRS23_TX_10306" & is.na(fish_col$TAG) & 
-             fish_col$VISIT_NO==1, "LINE"]
-
-# TAG == 0 in collection file -- assume they meant 44, as listed LAB QA file
-fish_col[fish_col$SITE_ID == "NRS23_SD_10017" & 
-           !is.na(fish_col$TAG) & 
-           fish_col$TAG==0, "TAG"] <- 44
-
-# TAG not provided by field crew, assuming its 10 from LAB QA file
-fish_col[fish_col$SITE_ID == "NRS23_NY_HP002" & 
-           is.na(fish_col$TAG), "TAG"] <- 10
-
-
-# Merge LAB QA with collection file. HAS_COUNT indicates that field crews 
-# recorded counts for the taxa they collected. is.na(fish_col$TAG) removed 
-# duplicate values 
-
-MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" & !is.na(fish_col$TAG),
-                             c("SITE_ID", "VISIT_NO","LINE", "TAG", 
-                               "VOUCH_NUM", "VOUCH_PHOTO", "VOUCH_UNK", 
-                               "VOUCH_QA", "NAME_COM", "FISH_TAXONOMIST")],
-                    LAB_QA[,c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER", 
-                     "COMMON.NAME", "TAXONOMIST.NAME","COMMENTS")], 
-           by.y =c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER"), 
-           by.x =  c("SITE_ID", "VISIT_NO", "TAG"), 
-           all.y = T)
-
-
-differences <- MergedData[trimws(toupper(MergedData$COMMON.NAME)) != 
-                            trimws(toupper(MergedData$NAME_COM)),]
-
-
-# add photo directory. 
-differences$PHOTO_Directory <- NA
-for (i in differences[differences$VOUCH_PHOTO=="Y","SITE_ID"]){
-  # i <- "NRS23_WA_10011"
-  PhotoFiles <- grep(i, list.files("Field Crews", recursive = T), value = T)
-  directory <- unique(unlist(lapply(strsplit(PhotoFiles,"/"),
-                       function(x) paste(x[-length(x)], collapse = "/"))))
-  
-  if(length(directory)>1){
-    directory <- paste(directory, collapse = " - OR - ")
-  }
-  
-  if(length(directory)==1){
-    differences[differences$SITE_ID == i & 
-                  differences$VOUCH_PHOTO=="Y", "PHOTO_Directory"] <- directory
-  }
-}
-View(differences)
-
-##################################################
-
-# Pause here: RM, LR, and DK agreed for 2023 that the name provided by 
-# field taxonomist is most likely correct. We will have to figure out a plan 
-# moving forward with 2024 data. 
-write.csv(differences, "Fish_QA_MBI_2023_11_30_wField_ID_Differences.csv")
-
-MergedData[toupper(MergedData$COMMON.NAME) == MergedData$NAME_COM,]
-
-# in some instances, multiple taxa were identified by the lab taxonomist. 
-# these need to be added as new records. Following DP use decimals to 
-# insert LINE and keep the same TAG number. Allocate total count between 
-# the species based on the percentage of voucher specimens. This needs to be 
-# included below. 
-
-
 
 # Update direct matches. Records that have a match in NRSA taxa list 
 #######
@@ -696,32 +591,37 @@ fish_col <- fish_col %>%
                NAME_COM_CORRECTED = "UNKNOWN NOTURUS")
 ################################################
 
-
-
-# Append new taxa to 18/19 taxa list and write. 
-# Mannually update traits information
+# Add new fish records to NRSA autecology file
+###########
+# Manually update traits information
+# Select records with new taxa and create table
 NewFish <- grep("-- NR", fish_col$NAME_COM_CORRECTED, value=T)
-
-
-NewFishTbl <- setNames(data.frame(matrix(NA,
-                           length(unique(NewFish)),
-                           dim(nars_taxa_list)[2])),
-         colnames(nars_taxa_list))
-
+NewFishTbl <- setNames(data.frame(matrix(NA, length(unique(NewFish)),
+                                         dim(nars_taxa_list)[2])),
+                       colnames(nars_taxa_list))
+# format name by removing "-- NR"
+# add new TAXA_ID. this was just a sequential number starting from the last 
+# record in the 1819 autecology file
 NewFishTbl$FINAL_NAME <- substring(unique(NewFish), 0, nchar(unique(NewFish))- 6)
 NewFishTbl$TAXA_ID <- 5212:(5211 + nrow(NewFishTbl))
-#easier to update new records manually.
-#write.csv(NewFishTbl, "newFishTaxonomy_2023.csv")
-NewFish<-read.csv("newFishTaxonomy_2023.csv", row.names = "X")
-nars_taxa_list <- rbind(nars_taxa_list, NewFish)
 
+# format name by removing "-- NR" in fish collection file
 rmNR <- grep("-- NR", fish_col$NAME_COM_CORRECTED)
-
 fish_col[rmNR, "NAME_COM_CORRECTED"] <- 
   substring(fish_col[rmNR, "NAME_COM_CORRECTED"], 0, 
             nchar(fish_col[rmNR, "NAME_COM_CORRECTED"]) - 6)
 
-View(nars_taxa_list)
+# Write table to add autecology information
+#write.csv(NewFishTbl, "newFishTaxonomy_2023.csv")
+
+#read in formatted table and rbind to NRSA taxa list
+NewFish<-read.csv("newFishTaxonomy_2023.csv", row.names = "X")
+nars_taxa_list <- rbind(nars_taxa_list, NewFish)
+
+# write table to send to Karen B. and IM team. 
+#write.table(nars_taxa_list, file = "allNRSA_fishTaxa.tab", sep = '\t')
+################################################
+
 
 # append TAXA_ID to fish collection file by merging with NAME_COM_CORRECTED
 #########
@@ -729,19 +629,22 @@ fish_col <- merge(fish_col,
       unique(nars_taxa_list[,c("TAXA_ID", "FINAL_NAME")]),
       by.x = "NAME_COM_CORRECTED", by.y = "FINAL_NAME",
       all.x = T)
-
+#####################################################
 # Check all rows are accounted for
 nrow(fish_col_original) == nrow(fish_col)
 View(fish_col)
 
-fish_col$NAME_COM_UPR
 
-# create total
+# Validate Counts
+#########
+# Site should not have duplicated taxa. Split dataframe and 
+# count number of records 
 fish_Count <- fish_col
-fish_Count$split.field <- factor(apply(fish_Count[,c("SITE_ID", "VISIT_NO", "NAME_COM_CORRECTED")], 1, paste0, collapse="_"))
+fish_Count$split.field <- factor(apply(fish_Count[,c("SITE_ID", "VISIT_NO", "NAME_COM_CORRECTED")], 
+                                       1, paste0, collapse="_"))
 fish_Count <- split(fish_Count, fish_Count$split.field)
-fish_col$PSTL_CODE
-#if there is >record sum counts, othes
+
+# if there is >record sum counts, otherwise it should be OK
 fish_Count <- lapply(fish_Count, function(x) 
   if(nrow(x) > 1){
     data.frame(unique(x[,c("PUBLICATION_DATE", "UID", 
@@ -754,6 +657,7 @@ fish_Count <- lapply(fish_Count, function(x)
                             "COUNT_19", "MORT_CT", "ANOM_COUNT")], 2, sum, na.rm=T)))
     
   } else {
+    
     x[,c("PUBLICATION_DATE", "UID", 
          "SITE_ID","PSTL_CODE", "DATE_COL",
          "VISIT_NO", "NAME_COM_CORRECTED",
@@ -762,38 +666,43 @@ fish_Count <- lapply(fish_Count, function(x)
          "MORT_CT", "ANOM_COUNT")]
   })
 
-fish_col[fish_col$SITE_ID=="NRS23_DE_10003",]
-
 fish_Count <- do.call(rbind,fish_Count)
+# check unique records
+anyDuplicated(fish_Count[,c("SITE_ID","VISIT_NO","TAXA_ID")])
+
+# sum counts
 fish_Count$TOTAL <- apply(fish_Count[,c("COUNT_6", "COUNT_12", "COUNT_18", "COUNT_19")], 1, sum, na.rm = T)
 fish_Count$MORT_CT[is.na(fish_Count$MORT_CT)] <- 0
-# if Dave Peck said that mort count can be unreliable. 
+
+# check MORT_CT: DP indicated that this field can be unreliable. 
 # When it exceeds the number of fish collected set to NA
 fish_Count[fish_Count$TOTAL < fish_Count$MORT_CT,"MORT_CT"] <- NA
-rownames(fish_Count) <- NULL
-View(fish_Count)
 
-
+# sometimes no fish were collected at a single transect. NO FISH is reserved for 
+# sites that did notcollect any fish. Remove any transects that recorded no fish 
+# but collected fish at other locations
 siteSplit <- split(fish_Count, list(fish_Count$SITE_ID,fish_Count$VISIT_NO))
 siteSplit <- lapply(siteSplit, function(x) {
-  if(nrow(x)>1 & any(x$TOTAL==0)){x[
-    x$TOTAL!=0,]  
-  } else {x}
-  
-} )
+  if(nrow(x)>1 & any(x$TOTAL==0)){x[x$TOTAL!=0,]} else {x}})
 
 fish_Count <- do.call(rbind,siteSplit)
 
-# removes NA Values in count columns. Assume the NA are zeros 
-fish_Count[is.na(fish_Count[, "COUNT_6"]), "COUNT_6"]<-0
-fish_Count[is.na(fish_Count[, "COUNT_12"]),"COUNT_12"]<-0
-fish_Count[is.na(fish_Count[, "COUNT_18"]),"COUNT_18"]<-0
-fish_Count[is.na(fish_Count[, "COUNT_19"]),"COUNT_19"]<-0
+# removes NA Values in count columns. Assume the NA are zeros to avoid confusion 
+fish_Count[is.na(fish_Count[, "COUNT_6"]), "COUNT_6"] <- 0
+fish_Count[is.na(fish_Count[, "COUNT_12"]),"COUNT_12"] <- 0
+fish_Count[is.na(fish_Count[, "COUNT_18"]),"COUNT_18"] <- 0
+fish_Count[is.na(fish_Count[, "COUNT_19"]),"COUNT_19"] <- 0
 
+#crop row names
 rownames(fish_Count) <- NULL
-# select 
-fish_Count_CONUS <- fish_Count[!fish_Count$PSTL_CODE%in%c("GU","AK",""),]
+
+# select CONUS records
 fish_Count[fish_Count$PSTL_CODE=="",]
+fish_Count_CONUS <- fish_Count[!fish_Count$PSTL_CODE%in%c("GU","AK",""),]
+
+#Drop Visit 99 -- MD resample site deprecated
+fish_Count_CONUS[fish_Count_CONUS$VISIT_NO==99,]
+fish_Count_CONUS <- fish_Count_CONUS[fish_Count_CONUS$VISIT_NO!=99,]
 
 # this record was corrected by field crew and reported to IM. Updating the record in the 
 # database generated a duplicated when cast to wide format. Karen was notified and is working with 
@@ -802,19 +711,19 @@ fish_Count[fish_Count$PSTL_CODE=="",]
 fish_Count_CONUS[fish_Count_CONUS$SITE_ID=="NRS23_AL_10024" &
                    fish_Count_CONUS$LINE==27,c("NAME_COM_CORRECTED","TAXA_ID")] <- c("MIMIC SHINER", "300")
 
-#Drop Visit 99 -- MD resample site deprecated
-fish_Count_CONUS[fish_Count_CONUS$VISIT_NO==99,]
-fish_Count_CONUS <- fish_Count_CONUS[fish_Count_CONUS$VISIT_NO!=99,]
+############################################
 
 write.csv(fish_Count_CONUS, "fish_Count_CONUS_20250110.csv")
 
 # This is the list of taxa that can be passed through to nativeness/range checks
-write.csv(fish_col, "Reconciled_Taxa_Names_20250107.csv")
+# old file, will be replaced by above
+#write.csv(fish_col, "Reconciled_Taxa_Names_20250107.csv")
 
-z<-fish_col[fish_col$NAME_COM==""&fish_col$HAS_COUNT=="Y",]
-# Query instances where NAME_COM is different from NAME_COM_CORRECTED for 2023 
-# collections. This list can be shared with partners to see of the 
-# name change is appropriate. 
+# create file where NAME_COM is different from NAME_COM_CORRECTED
+############
+# this documents any names submitted by field taxonomists that are different from 
+# the record used for calculating metrics. This list can be shared with partners 
+# to see of the name change is appropriate or used for further reconciliation. 
 Check_Taxa <- fish_col%>%
   filter(!STATE%in%c("Selawik", "GU")&
            NAME_COM_UPR != NAME_COM_CORRECTED |
@@ -827,37 +736,118 @@ Check_Taxa <- fish_col%>%
            "COUNT_18", "COUNT_19","HAS_COUNT", 
            "FISH_TAXONOMIST", "FLAG", "TAXA_ID", 
            "COMMENT"))
-
+# Vise list
 View(Check_Taxa[Check_Taxa$NAME_COM_CORRECTED != "NO FISH",])
-NRS23_AL_10024
+################################################################
+# Michelle used this list to contact field taxonomists for updates, specific attention was 
+# given to taxa that were assigned unknown in the field. 
+#write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023_unknowns.csv", row.names = F)
 
-names(fish_col)
-View(merge(Check_Taxa, 
-      FISH_COMMENTS[,c("SITE_ID","VISIT_NO","FLAG","COMMENT")], 
-      by = c("SITE_ID","VISIT_NO","FLAG"), all.x = T))
 
-View(Check_Taxa)
+#
+# Compare names of voucher specimens provided by field taxonomist to 
+# names provided by the lab QC taxonomist
+#############
+# Site, Visit, Tag for QA file --- the objective here is to pull out the list
+# with matching records. Biggest challenge was that crews sometimes did not 
+# record the "TAG" of the specimen that they submitted. In most instances 
+# these were resolved using the "LINE" but a few instances required detective
+# work that compared the LAB QA with the SITE in the collection file.
 
-write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2023_unknowns.csv", row.names = F)
 
-names(fish_col)
-
-wVOUCH <- Check_Taxa%>%
-  filter(VOUCH_PHOTO=="Y"|VOUCH_UNK=="Y"|VOUCH_QA=="Y")
-
+# QA Lab file provided by RM. Photo vouchers are found in Field Crews directory  
 LAB_QA <- read.csv("Fish_QA_MBI_2023_11_30.csv")
-View(LAB_QA)
-wVOUCH[!wVOUCH$SITE_ID%in%LAB_QA$SITE.ID,]
-
-wVOUCH[wVOUCH$SITE_ID%in%LAB_QA$SITE.ID,]
-
-View(LAB_QA[LAB_QA$SITE.ID=="NRS23_PA_10029",])
-NRS23_CA_10072
 
 
+# Adding TAG to sites/specimens that were submitted for voucher
+
+# there were 26 TAG.NUMBER in LAB QA file -- assume line number is appropriate
+fish_col[fish_col$SITE_ID == "NRS23_GA_10041" & is.na(fish_col$TAG),"TAG"] <- 
+  fish_col[fish_col$SITE_ID == "NRS23_GA_10041" & is.na(fish_col$TAG),"LINE"]
+
+# there were 3 TAG.NUMBER in LAB QA file -- assume line number is appropriate
+fish_col[fish_col$SITE_ID=="NRS23_ID_10192"&is.na(fish_col$TAG),"TAG"] <- 
+  fish_col[fish_col$SITE_ID=="NRS23_ID_10192"&is.na(fish_col$TAG),"LINE"]
+
+# there were 4 TAG.NUMBER in LAB QA file -- assume line number is appropriate
+fish_col[fish_col$SITE_ID=="NRS23_MT_10069"&is.na(fish_col$TAG),"TAG"] <-
+  fish_col[fish_col$SITE_ID=="NRS23_MT_10069" & is.na(fish_col$TAG),"LINE"]
+
+# there were 5 TAG.NUMBER in LAB QA file -- assume line number is appropriate. 
+# Site was also revisited, so filter to visit 1 which was included in LAB QA 
+fish_col[fish_col$SITE_ID == "NRS23_MT_10013" & is.na(fish_col$TAG)& 
+           fish_col$VISIT_NO==1, "TAG"] <- 
+  fish_col[fish_col$SITE_ID=="NRS23_MT_10013" & is.na(fish_col$TAG) & 
+             fish_col$VISIT_NO==1, "LINE"]
+
+# -- assume line number is appropriate
+fish_col[fish_col$SITE_ID == "NRS23_TX_10306" & is.na(fish_col$TAG)& 
+           fish_col$VISIT_NO==1, "TAG"] <- 
+  fish_col[fish_col$SITE_ID=="NRS23_TX_10306" & is.na(fish_col$TAG) & 
+             fish_col$VISIT_NO==1, "LINE"]
+
+# TAG == 0 in collection file -- assume they meant 44, as listed LAB QA file
+fish_col[fish_col$SITE_ID == "NRS23_SD_10017" & 
+           !is.na(fish_col$TAG) & 
+           fish_col$TAG==0, "TAG"] <- 44
+
+# TAG not provided by field crew, assuming its 10 from LAB QA file
+fish_col[fish_col$SITE_ID == "NRS23_NY_HP002" & 
+           is.na(fish_col$TAG), "TAG"] <- 10
 
 
+# Merge LAB QA with collection file. HAS_COUNT indicates that field crews 
+# recorded counts for the taxa they collected. is.na(fish_col$TAG) removed 
+# duplicate values 
 
+MergedData <- merge(fish_col[fish_col$HAS_COUNT == "Y" & !is.na(fish_col$TAG),
+                             c("SITE_ID", "VISIT_NO","LINE", "TAG", 
+                               "VOUCH_NUM", "VOUCH_PHOTO", "VOUCH_UNK", 
+                               "VOUCH_QA", "NAME_COM", "FISH_TAXONOMIST")],
+                    LAB_QA[,c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER", 
+                              "COMMON.NAME", "TAXONOMIST.NAME","COMMENTS")], 
+                    by.y =c("SITE.ID", "VISIT.NUMBER", "TAG.NUMBER"), 
+                    by.x =  c("SITE_ID", "VISIT_NO", "TAG"), 
+                    all.y = T)
+
+
+differences <- MergedData[trimws(toupper(MergedData$COMMON.NAME)) != 
+                            trimws(toupper(MergedData$NAME_COM)),]
+
+
+# add photo directory. 
+differences$PHOTO_Directory <- NA
+for (i in differences[differences$VOUCH_PHOTO=="Y","SITE_ID"]){
+  # i <- "NRS23_WA_10011"
+  PhotoFiles <- grep(i, list.files("Field Crews", recursive = T), value = T)
+  directory <- unique(unlist(lapply(strsplit(PhotoFiles,"/"),
+                                    function(x) paste(x[-length(x)], collapse = "/"))))
+  
+  if(length(directory)>1){
+    directory <- paste(directory, collapse = " - OR - ")
+  }
+  
+  if(length(directory)==1){
+    differences[differences$SITE_ID == i & 
+                  differences$VOUCH_PHOTO=="Y", "PHOTO_Directory"] <- directory
+  }
+}
+View(differences)
+
+##################################################
+
+# Pause here: RM, LR, and DK agreed for 2023 that the name provided by 
+# field taxonomist is most likely correct. We will have to figure out a plan 
+# moving forward with 2024 data. 
+#write.csv(differences, "Fish_QA_MBI_2023_11_30_wField_ID_Differences.csv")
+
+MergedData[toupper(MergedData$COMMON.NAME) == MergedData$NAME_COM,]
+
+# in some instances, multiple taxa were identified by the lab taxonomist. 
+# these need to be added as new records. Following DP use decimals to 
+# insert LINE and keep the same TAG number. Allocate total count between 
+# the species based on the percentage of voucher specimens. This needs to be 
+# included below. 
 
 
 ################################################################################
