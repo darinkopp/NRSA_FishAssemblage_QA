@@ -713,7 +713,35 @@ fish_Count_CONUS[fish_Count_CONUS$SITE_ID=="NRS23_AL_10024" &
 
 ############################################
 
-write.csv(fish_Count_CONUS, "fish_Count_CONUS_20250110.csv")
+# check list of taxa against the AFS accepted names
+############
+library(pdfsearch)
+file <- "C:/Users/DKOPP/OneDrive - Environmental Protection Agency (EPA)/Projects/NRSA_FishQA/Names-of-Fishes-8-Table1.pdf"
+Taxa_2_search <- str_to_title(unique(fish_Count_CONUS$NAME_COM_CORRECTED))
+
+AFS_results <- keyword_search(file, keyword = Taxa_2_search, path = TRUE)
+
+# List of taxa without an AFS match. Most were not identified to species level, 
+# hybrids, or had capitalized letters. No changes were made because they were included in prevous 
+# taxa lists and surveys. 
+# in the future, may be come argument to merging Common Carp with Mirror Carp 
+# and changing Eastern Blacknose Dace to Blacknose Dace. Tennessee Darter could 
+# be considered Snubnose Darter. Rocky mountain sculpin is also unrecognized but
+# grandfathered im. 
+noAFS <- toupper(Taxa_2_search[!Taxa_2_search %in% AFS_results$keyword])
+nars_taxa_list[nars_taxa_list$FINAL_NAME %in% noAFS, c("FINAL_NAME","GENUS","SPECIES")]
+
+nars_taxa_list[nars_taxa_list$FINAL_NAME %in% c("COMMON CARP", "BLACKNOSE DACE"),]
+nars_taxa_list[nars_taxa_list$FINAL_NAME %in% c("TENNESSEE DARTER", "SNUBNOSE DARTER"),]
+view(fish_Count_CONUS[fish_Count_CONUS$NAME_COM_CORRECTED %in% c("COMMON CARP","MIRROR CARP"),])
+######################################################
+
+
+#write.csv(fish_Count_CONUS, "fish_Count_CONUS_20250110.csv")
+
+#####################################################################
+# Extras
+#####################################################################
 
 # This is the list of taxa that can be passed through to nativeness/range checks
 # old file, will be replaced by above
@@ -873,17 +901,22 @@ tm_shape(site.info_WGS84)+
 
 #NAD83 for CONUS -- Map sites with >0 fish collection data 
 #######
-fishUID <- fish_col%>%filter(HAS_COUNT=="Y")%>%select(UID)%>%distinct()
-site.info_NAD83 <- site.info %>%
+names(fishUID)
+fishUID <- reshape2::dcast(UID~TAXA_ID,data=fish_Count_CONUS, value.var = "TOTAL", fill=0)
+rich <- apply(fishUID[,-1], 1, function(x) sum(!is.na(x) & x>0))
+fishUID <- data.frame(UID = fishUID[,"UID"], rich)
+
+site.info_NAD83 <- merge(fishUID, site.info, by = "UID") %>%
   filter(!is.na(LON_DD83) & !is.na(LAT_DD83) & UID %in% fishUID$UID) %>%
   select(c(UID, SITE_ID, VISIT_NO, YEAR, HUC8, DATE_COL,
-           LON_DD83, LAT_DD83)) %>% 
+           LON_DD83, LAT_DD83, rich)) %>% 
   mutate(YEAR = as.factor(YEAR))%>%
   st_as_sf(coords = c("LON_DD83", "LAT_DD83"), crs = 4269)
 ########################
+
 tmap_mode("view")
 tm_shape(site.info_NAD83) +
-  tm_dots("YEAR")
+  tm_dots("rich", size = 0.5)
 
 
 
