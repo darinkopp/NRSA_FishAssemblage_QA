@@ -65,6 +65,7 @@ fish_col <- dir_NRSA_2324%>%
   mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19), 
                                 na.rm = T) > 0, "Y","N"))
 
+view(fish_col[fish_col$SITE_ID=="NRS23_PA_10100",])
 # add name of fish taxonomist
 FishTaxonomist <- dir_NRSA_2324%>%
   paste0("/raw/tabfiles/nrsa2324_crew.tab") %>%
@@ -632,17 +633,153 @@ fish_col <- merge(fish_col,
 #####################################################
 # Check all rows are accounted for
 nrow(fish_col_original) == nrow(fish_col)
-View(fish_col)
+#only GU has new taxa to be added. 
+view(fish_col[is.na(fish_col$TAXA_ID),])
+
+# filter data for CONUS
+CONUS_Fishes <- fish_col %>%
+  filter(!STATE%in%c("Selawik", "GU")) %>%
+  select(c("UID", "SITE_ID", "VISIT_NO", "DATE_COL", 
+         "TAG","LINE","TAXA_ID", "NAME_COM", "NAME_COM_UPR",
+         "NAME_COM_CORRECTED","VOUCH_NUM", "VOUCH_PHOTO", 
+         "VOUCH_UNK", "VOUCH_QA", "COUNT_6", "COUNT_12", 
+         "COUNT_18", "COUNT_19","MORT_CT","ANOM_COUNT", 
+         "HAS_COUNT", "FISH_TAXONOMIST", "FLAG", "COMMENT"))
+
+dim(CONUS_Fishes)         
+anyDuplicated(CONUS_Fishes[,c("UID", "SITE_ID", "VISIT_NO", "LINE")])
+
+# check list of taxa against the AFS accepted names. 
+library(pdfsearch)
+############
+file <- "C:/Users/DKOPP/OneDrive - Environmental Protection Agency (EPA)/Projects/NRSA_FishQA/Names-of-Fishes-8-Table1.pdf"
+Taxa_2_search <- str_to_title(unique(CONUS_Fishes$NAME_COM_CORRECTED))
+
+AFS_results <- keyword_search(file, keyword = Taxa_2_search, path = TRUE)
+
+# List of taxa without an AFS match. Most were not identified to species level, 
+# hybrids, or had capitalized letters. No changes were made because they were included in prevous 
+# taxa lists and surveys. 
+# in the future, may be come argument to merging Common Carp with Mirror Carp 
+# and changing Eastern Blacknose Dace to Blacknose Dace. Tennessee Darter could 
+# be considered Snubnose Darter. Rocky mountain sculpin is also unrecognized but
+# grandfathered in. 
+noAFS <- toupper(Taxa_2_search[!Taxa_2_search %in% AFS_results$keyword])
+view(nars_taxa_list[nars_taxa_list$FINAL_NAME %in% noAFS, c("FINAL_NAME","GENUS","SPECIES")])
+
+#nars_taxa_list[nars_taxa_list$FINAL_NAME %in% c("COMMON CARP", "BLACKNOSE DACE"),]
+#nars_taxa_list[nars_taxa_list$FINAL_NAME %in% c("TENNESSEE DARTER", "SNUBNOSE DARTER"),]
+#view(fish_Count_CONUS[fish_Count_CONUS$NAME_COM_CORRECTED %in% c("COMMON CARP","MIRROR CARP"),])
+######################################################
+
+# Remove Names that do not need to be corrected
+############
+CONUS_Fishes[CONUS_Fishes$NAME_COM == CONUS_Fishes$NAME_COM_CORRECTED, "NAME_COM_CORRECTED"] <- ""
+#####################################
+view(CONUS_Fishes)
+
+# check MORT_CT: DP indicated that this field can be unreliable. 
+# When it exceeds the number of fish collected set to NA
+############
+LineTotal <- apply(CONUS_Fishes[,c("COUNT_6", "COUNT_12", "COUNT_18", "COUNT_19")], 1, sum, na.rm = T)
+CONUS_Fishes$MORT_CT_CORRECTED <- ifelse(CONUS_Fishes$MORT_CT > LineTotal & 
+                                           !is.na(CONUS_Fishes$MORT_CT), "DELETE", " ")
+####################################
+
+# Identify lines without counts 
+##########
+# sometimes no fish were collected at a single transect. NO FISH is reserved for 
+# sites that did not collect any fish. LINE CORRECTED should remove any Lines 
+# that recorded no fish (either zero counts and/or blank names) but collected 
+# fish recorded on other lines
+
+siteSplit <- split(CONUS_Fishes, list(CONUS_Fishes$SITE_ID, CONUS_Fishes$VISIT_NO))
+siteSplit <- siteSplit[unlist(lapply(siteSplit, function(x) nrow(x)>0))]
+siteSplit <- lapply(siteSplit, function(x) {
+  #sites and visits that have NO FISH and other fish 
+  if(any(x$TAXA_ID != 99999) & any(x$TAXA_ID == 99999)){
+    index <- rownames(x)[x$TAXA_ID == 99999]
+    df1 <- data.frame(index, x[x$TAXA_ID == 99999, c("UID", "SITE_ID", "VISIT_NO", "LINE")], 
+               LINE_CORRECTED = "Y")
+    
+    #appends any other fish collected during site and visit
+    if(any(x$TAXA_ID != 99999)){
+      index <- rownames(x)[x$TAXA_ID != 99999]
+      df1 <- rbind(df1,
+                   data.frame(index, x[x$TAXA_ID != 99999, 
+                                       c("UID", "SITE_ID", "VISIT_NO", "LINE")], 
+                              LINE_CORRECTED = "N"))
+    }
+    
+  } else {
+    index <- rownames(x)
+    df1 <- data.frame(index, 
+                      x[, c("UID", "SITE_ID", "VISIT_NO", "LINE")], 
+                      LINE_CORRECTED = "N")}
+  return(df1)
+  })
+
+LINE_CORRECT <- do.call(rbind, siteSplit)
+rownames(LINE_CORRECT) <- LINE_CORRECT$index
+CONUS_Fishes$LINE_CORRECTED <- LINE_CORRECT[rownames(CONUS_Fishes),"LINE_CORRECTED"]
+CONUS_Fishes[CONUS_Fishes$LINE_CORRECTED == "N", "LINE_CORRECTED"] <- ""
+CONUS_Fishes[CONUS_Fishes$LINE_CORRECTED == "Y", "LINE_CORRECTED"] <- "DELETE"
+####################################
+
+# for example,
+view(CONUS_Fishes[CONUS_Fishes$SITE_ID == "NRS23_AL_10024",])
+#view(CONUS_Fishes[CONUS_Fishes$SITE_ID == "NRS23_AR_10091", ])
+#view(CONUS_Fishes[CONUS_Fishes$SITE_ID == "NRS23_KS_10216", ])
+#view(CONUS_Fishes[CONUS_Fishes$SITE_ID == "NRS23_ID_10016", ])
+#view(CONUS_Fishes[CONUS_Fishes$SITE_ID == "NRS23_CA_10310", ])
+
+#flag MD visit 99. This will be removed by Susanne in the future
+#########
+CONUS_Fishes[CONUS_Fishes$VISIT_NO=="99","LINE_CORRECTED"] <- "DELETE"
+view(CONUS_Fishes[CONUS_Fishes$VISIT_NO=="99",])
+#######################################
+
+View(fish_Count_CONUS)
+write.csv(CONUS_Fishes, "CONUS_Fishes_20250114.csv")
 
 
-# Validate Counts
+
+#####################################################################
+# Extras
+#####################################################################
+
+# Validate Counts -- Karen/IM will sum across line # 
 #########
 # Site should not have duplicated taxa. Split dataframe and 
 # count number of records 
 fish_Count <- fish_col
+
+View(fish_col)
+# these site X species combinations seem to be duplicated. I'm assuming that
+# the specimens were originally set aside as unknown vouchers (see: VOUCH_UNK, VOUCH_NUM) 
+# but the record was not deprecated or count updated after the identification was confirmed. 
+# confirmed with Karen, will be fixed in the next published version of the database. 
+c("NRS23_VA_2143_ 1_KANAWHA SCULPIN",
+  "NRS23_VA_2143_ 1_MOTTLED SCULPIN",
+  "NRS23_VA_2143_ 1_STRIPED SHINER")
+
+# remove above records
+#fish_Count <- fish_Count[-c(4645, 5554, 9095),]
 fish_Count$split.field <- factor(apply(fish_Count[,c("SITE_ID", "VISIT_NO", "NAME_COM_CORRECTED")], 
                                        1, paste0, collapse="_"))
 fish_Count <- split(fish_Count, fish_Count$split.field)
+
+# most combined records pertain to No Fish, indeed some cases a NAME_COM 
+# was assigned but no counts were provided. This most likely indicates that 
+# the specimen was miss-identified in the field and is therefore removed. 
+# for a fish to have a confirmed presence at a site it has to have an associated 
+# count value. 
+ind <- unlist(lapply(fish_Count, function(x) nrow(x) > 1))
+CombinedRecords <- fish_Count[ind]
+# for example
+#CombinedRecords[["NRS23_SD_10050_ 1_NO FISH"]]
+
+
 
 # if there is >record sum counts, otherwise it should be OK
 fish_Count <- lapply(fish_Count, function(x) 
@@ -668,20 +805,27 @@ fish_Count <- lapply(fish_Count, function(x)
 
 fish_Count <- do.call(rbind,fish_Count)
 # check unique records
-anyDuplicated(fish_Count[,c("SITE_ID","VISIT_NO","TAXA_ID")])
+anyDuplicated(fish_Count[,c("SITE_ID", "VISIT_NO", "TAXA_ID")])
 
 # sum counts
 fish_Count$TOTAL <- apply(fish_Count[,c("COUNT_6", "COUNT_12", "COUNT_18", "COUNT_19")], 1, sum, na.rm = T)
 fish_Count$MORT_CT[is.na(fish_Count$MORT_CT)] <- 0
+fish_Count$ANOM_COUNT[is.na(fish_Count$ANOM_COUNT)] <- 0 
 
 # check MORT_CT: DP indicated that this field can be unreliable. 
 # When it exceeds the number of fish collected set to NA
 fish_Count[fish_Count$TOTAL < fish_Count$MORT_CT,"MORT_CT"] <- NA
 
+
 # sometimes no fish were collected at a single transect. NO FISH is reserved for 
-# sites that did notcollect any fish. Remove any transects that recorded no fish 
-# but collected fish at other locations
+# sites that did not collect any fish. Remove any transects that recorded no fish 
+# (either zero counts and/or blank names) but collected fish at other locations
 siteSplit <- split(fish_Count, list(fish_Count$SITE_ID,fish_Count$VISIT_NO))
+ind <- unlist(lapply(siteSplit, function(x) nrow(x)>1 & any(x$TOTAL==0)))
+# for example, no counts were assigned to LINES 11 and 6 but fish were collected
+# at other lines, these records should be removed
+siteSplit[grep("NRS23_SD_10050", names(siteSplit), value=T)]
+
 siteSplit <- lapply(siteSplit, function(x) {
   if(nrow(x)>1 & any(x$TOTAL==0)){x[x$TOTAL!=0,]} else {x}})
 
@@ -709,39 +853,12 @@ fish_Count_CONUS <- fish_Count_CONUS[fish_Count_CONUS$VISIT_NO!=99,]
 # suzanne and Michelle to fix. (1/7/2024)
 # nars_taxa_list[nars_taxa_list$FINAL_NAME=="MIMIC SHINER", ]
 fish_Count_CONUS[fish_Count_CONUS$SITE_ID=="NRS23_AL_10024" &
-                   fish_Count_CONUS$LINE==27,c("NAME_COM_CORRECTED","TAXA_ID")] <- c("MIMIC SHINER", "300")
+                   fish_Count_CONUS$LINE==27,
+                 c("NAME_COM_CORRECTED","TAXA_ID")] <- c("MIMIC SHINER", "300")
 
 ############################################
 
-# check list of taxa against the AFS accepted names
-############
-library(pdfsearch)
-file <- "C:/Users/DKOPP/OneDrive - Environmental Protection Agency (EPA)/Projects/NRSA_FishQA/Names-of-Fishes-8-Table1.pdf"
-Taxa_2_search <- str_to_title(unique(fish_Count_CONUS$NAME_COM_CORRECTED))
 
-AFS_results <- keyword_search(file, keyword = Taxa_2_search, path = TRUE)
-
-# List of taxa without an AFS match. Most were not identified to species level, 
-# hybrids, or had capitalized letters. No changes were made because they were included in prevous 
-# taxa lists and surveys. 
-# in the future, may be come argument to merging Common Carp with Mirror Carp 
-# and changing Eastern Blacknose Dace to Blacknose Dace. Tennessee Darter could 
-# be considered Snubnose Darter. Rocky mountain sculpin is also unrecognized but
-# grandfathered im. 
-noAFS <- toupper(Taxa_2_search[!Taxa_2_search %in% AFS_results$keyword])
-nars_taxa_list[nars_taxa_list$FINAL_NAME %in% noAFS, c("FINAL_NAME","GENUS","SPECIES")]
-
-nars_taxa_list[nars_taxa_list$FINAL_NAME %in% c("COMMON CARP", "BLACKNOSE DACE"),]
-nars_taxa_list[nars_taxa_list$FINAL_NAME %in% c("TENNESSEE DARTER", "SNUBNOSE DARTER"),]
-view(fish_Count_CONUS[fish_Count_CONUS$NAME_COM_CORRECTED %in% c("COMMON CARP","MIRROR CARP"),])
-######################################################
-
-
-#write.csv(fish_Count_CONUS, "fish_Count_CONUS_20250110.csv")
-
-#####################################################################
-# Extras
-#####################################################################
 
 # This is the list of taxa that can be passed through to nativeness/range checks
 # old file, will be replaced by above
