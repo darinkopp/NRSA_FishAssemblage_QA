@@ -43,7 +43,7 @@ fish_col <- dir_NRSA_2324%>%
   read.table(sep = "\t", header = T) %>% 
   rowwise()%>%
   mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19), 
-                                na.rm = T) > 0, "Y","N"))
+                                na.rm = T) > 0, "Y", "N"))
 
 # add name of fish taxonomist
 FishTaxonomist <- dir_NRSA_2324%>%
@@ -1020,6 +1020,12 @@ fish_col[fish_col$LINE_CORRECTED == "Y", "LINE_CORRECTED"] <- "DELETE"
 ####################################
 
 all(nrow(fish_col) == nrow(fish_col_original))
+
+# found comment mentioning that this was Hybrid, BARTRAMS BASS
+fish_col[fish_col$SITE_ID == "NRS23_SC_10074" & 
+           fish_col$LINE == 20, "NAME_COM_CORRECTED"] <- "ALABAMA BASS X BARTRAMS BASS"
+
+write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
 
 # view the lines that will be removed from the dataset
 view(fish_col[fish_col$LINE_CORRECTED == "DELETE",])

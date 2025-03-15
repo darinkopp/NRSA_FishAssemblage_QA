@@ -232,13 +232,17 @@ fewerFields<- c("UID","SITE_ID","FISH_SAMPLING_SUFFICIENT",
                 "SAMPLED_FISH","PRIM_GEAR","PRIM_LENGTH_FISHED",
                 "SEC_GEAR","SEC_LENGTH_FISHED","COMMENT")
 
-# dissagreements _ check comments for any inconsistencies
+
+# check for agreements and dissagreements, send corrections directly 
+# to Michelle integrate into database
+
+# dissagreements 
 view(SAMPLE_SUF[
   SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT != 
     substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1),
   fewerFields])
 
-# agreements _ Check comments for any inconsisencies
+# agreements
 view(SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT == 
                   substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1),
                 fewerFields])
@@ -249,4 +253,4 @@ view(SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT ==
 view(SAMPLEwCOM[SAMPLEwCOM$FISH_SAMPLING_SUFFICIENT=="N" & substring(SAMPLEwCOM$SAMPLED_FISH,1,1)=="Y", fewerFields])
 view(SAMPLEwCOM[SAMPLEwCOM$FISH_SAMPLING_SUFFICIENT=="Y" & substring(SAMPLEwCOM$SAMPLED_FISH,1,1)=="N", fewerFields])
 
-
+SAMPLE_SUF[substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,2)=="NO", fewerFields]
