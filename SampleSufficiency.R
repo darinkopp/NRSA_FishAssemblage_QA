@@ -260,7 +260,7 @@ Check_Sampling <- SAMPLE_SUF[
 # checked output and manually corrected sites where crew indicated that
 # they did not sample sufficiently, but still reported fish length. 
 # Most were because of site conditions constraining efforts listed in 
-# sufficency comements
+# sufficiency comments
 SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022901,2022910,2022700,2022804,2022901,2022910,
                                2023708,2021888,2021967,2022169,2022176,2022314,
                                2022431,2022815,2023150,2023211,2023241,2023250,
