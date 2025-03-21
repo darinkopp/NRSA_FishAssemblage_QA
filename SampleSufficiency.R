@@ -45,11 +45,25 @@ INDIV <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
   data.frame()
 
 # Fish Comments for Sampling file
-FISH_COMMENTS <- dir_NRSA_2324 %>%
+SAMPLING_COMMENT <- dir_NRSA_2324 %>%
   paste0("/raw/tabfiles/nrsa2324_comments.tab") %>%
   read.table(sep = "\t", header = T) %>%
   filter(SAMPLE_TYPE=="FISH")%>%
   filter(grepl("SAMPLING_COMMENT", FLAG))
+
+FISH_SAMPLING_SUFFICIENT_COMMENT <- dir_NRSA_2324 %>%
+  paste0("/raw/tabfiles/nrsa2324_comments.tab") %>%
+  read.table(sep = "\t", header = T) %>%
+  filter(SAMPLE_TYPE=="FISH")%>%
+  filter(grepl("FISH_SAMPLING_SUFFICIENT", FLAG))
+
+
+CrewLead <- dir_NRSA_2324%>%
+  paste0("/raw/tabfiles/nrsa2324_crew.tab") %>%
+  read.table(sep = "\t", header = T) %>%
+  filter(PARAMETER == "CREW_LEADER") %>%
+  mutate(CREW_LEADER = RESULT) %>%
+  select(UID,CREW_LEADER)
 
 # site verification file 
 TRCHLEN <- dir_NRSA_2324%>%
@@ -78,18 +92,17 @@ SAMPLE_SUF <- Reduce(function(x,y)
   merge(x, y, by = "UID", all.x=T), 
   list(SAMPLE, 
        TRCHLEN, 
-       INDIV)) %>%
+       INDIV,
+       CrewLead)) %>%
   rowwise() %>%
   mutate(CWIDTH_Sampled = RCH_LENGTH/TRCHLEN) %>%
-  merge(., FISH_COMMENTS[,c("UID", "COMMENT")], 
+  merge(., SAMPLING_COMMENT[,c("UID", "COMMENT")], 
+        by = "UID", all.x = T)%>%
+  merge(., FISH_SAMPLING_SUFFICIENT_COMMENT[,c("UID", "COMMENT")], 
         by = "UID", all.x = T)
 
-#SAMPLE[SAMPLE$FISH_PROTOCOL == "" & SAMPLE$RCHWIDTH >= 13, "FISH_PROTOCOL"] <- "LG"
-#SAMPLE[SAMPLE$FISH_PROTOCOL == "" & SAMPLE$RCHWIDTH<13,"FISH_PROTOCOL"] <- "SM"
-#SAMPLE[!is.na(SAMPLE$RCH_LENGTH)&SAMPLE$RCH_LENGTH==15,
-#c("SITE_ID", "FISH_SAMPLING_SUFFICIENT", "RCH_LENGTH")]
 
-#query
+# Assign sufficiency category 
 SAMPLE_SUF <- SAMPLE_SUF %>%
   mutate(FISH_SAMPLING_SUFFICIENT_CORRECTED = 
            ifelse(
@@ -98,8 +111,8 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                                          "LG_NONWADEABLE","LG_WADEABLE")&
                     CWIDTH_Sampled >= 0.90 &
                     TRCHLEN_FLAG == "N"|
-               !is.na(CWIDTH_Sampled) & FISH_SAMPLING=="" &
-               FISH_PROTOCOL %in% c("LG_NONWADEABLE","LG_WADEABLE")&
+               !is.na(CWIDTH_Sampled) & FISH_SAMPLING == "" &
+               FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
                CWIDTH_Sampled < 0.90 &
                CWIDTH_Sampled >= 0.50 &
                TRCHLEN_FLAG == "N" &
@@ -140,7 +153,8 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                 CWIDTH_Sampled < 0.50 &
                 CWIDTH_Sampled > 0 &
                 TRCHLEN_FLAG == "N"&
-                TOTALINDV < 25,
+                TOTALINDV < 25 &
+                FISH_SAMPLING == "",
               "NO-<50% OF REACH,<25 INDIV",
             
             # Large streams
@@ -151,7 +165,8 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                     CWIDTH_Sampled >= 0.50 &
                     TRCHLEN_FLAG == "N" &
                     FISH_SAMPLING_SUFFICIENT != "Y"&
-                    TOTALINDV < 500,
+                    TOTALINDV < 500 & 
+                    FISH_SAMPLING == "",
                   'NO->20 CW SAMPLED, <500 INDIV',
               
               ifelse(
@@ -190,38 +205,37 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                    CWIDTH_Sampled < 0.50 &
                    CWIDTH_Sampled > 0 &
                    TRCHLEN_FLAG == "N" &
-                   TOTALINDV < 500 ,
+                   TOTALINDV < 500 &
+                   FISH_SAMPLING == "",
                    'NO-<20 CW SAMPLED,<500 INDIV',
-                 
-                ifelse(TRCHLEN_FLAG == "Y", 
-                       paste0("NO-<40 CW TRCHLEN"),
-                
-                ifelse(is.na(CWIDTH_Sampled)|
-                         !is.na(CWIDTH_Sampled) &
-                                  FISH_SAMPLING %in% 
-                         c("NO_PERMIT",	"PERMIT_RESTRICT", 
-                           "EQUIPMENT_FAILURE", "NO_FISH_OTHER",
-                           "NOT_FISHED_REACH_MIN"), "NOT FISHED", 
-                
+
                  ifelse(is.na(CWIDTH_Sampled)|
-                                !is.na(CWIDTH_Sampled) &
-                                FISH_SAMPLING=="SITE_CONDITIONS",
-                         "NO-SITE CONDITIONS", ""
+                                !is.na(CWIDTH_Sampled) & 
+                          FISH_SAMPLING %in% 
+                          c("NO_PERMIT",	"PERMIT_RESTRICT", 
+                            "EQUIPMENT_FAILURE", "NO_FISH_OTHER",
+                            "NOT_FISHED_REACH_MIN","SITE_CONDITIONS"),
+                         "NO-SITE CONDITIONS", 
+                        
+                 ifelse(TRCHLEN_FLAG == "Y" &
+                          FISH_SAMPLING == "", 
+                        paste0("NO-<40 CW SAMPLED"),""
                          
-                       )))))))))))))) %>%
+                       ))))))))))))) %>%
   data.frame()
 
 #check to confirm all records have been assigned
 if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) & 
-   all(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED!="")){
+   all(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED != "")){
   print ("All entries assigned sufficency class")
 } else {
   stop("unassigned records, either NA or blank")
+  SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "",]
 }
 
 #results of assignments
 addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 
-                 SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED))
+                 SAMPLE_SUF$FISH_PROTOCOL))
 
 
 # compare results entered by field Crew to decision 
@@ -229,28 +243,35 @@ fewerFields<- c("UID","SITE_ID","FISH_SAMPLING_SUFFICIENT",
                 "FISH_SAMPLING", "FISH_PROTOCOL","TRCHLEN", 
                 "RCHWIDTH", "TRCHLEN_CWIDTH", "TRCHLEN_FLAG",
                 "RCH_LENGTH", "CWIDTH_Sampled", "TOTALINDV", 
-                "SAMPLED_FISH","PRIM_GEAR","PRIM_LENGTH_FISHED",
-                "SEC_GEAR","SEC_LENGTH_FISHED","COMMENT")
+                "FISH_SAMPLING_SUFFICIENT_CORRECTED","PRIM_GEAR",
+                "PRIM_LENGTH_FISHED", "SEC_GEAR","SEC_LENGTH_FISHED", 
+                "CREW_LEADER", "COMMENT.x","COMMENT.y")
 
+# view disagreements
+Check_Sampling <- SAMPLE_SUF[
+  SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT == "N" & 
+  substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 1, 1) == "Y"|
+    SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT == "Y" & 
+    substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1) == "N", 
+  fewerFields]
 
-# check for agreements and dissagreements, send corrections directly 
-# to Michelle integrate into database
+#write.csv(Check_Sampling, "Check_Sampling.csv")
 
-# dissagreements 
-view(SAMPLE_SUF[
-  SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT != 
-    substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1),
-  fewerFields])
+# checked output and manually corrected sites where crew indicated that
+# they did not sample sufficiently, but still reported fish length. 
+# Most were because of site conditions constraining efforts listed in 
+# sufficency comements
+SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022901,2022910,2022700,2022804,2022901,2022910,
+                               2023708,2021888,2021967,2022169,2022176,2022314,
+                               2022431,2022815,2023150,2023211,2023241,2023250,
+                               2023294,2023300,2023356,2023360,2023389,2023394,
+                               2023412,2023433,2023506,2023526,2023626,2023681,
+                               2023728,2023820,2023909,2024006,2024031,2024100,
+                               2024129,2023170),
+           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "NO-SITE CONDITIONS"
 
-# agreements
-view(SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT == 
-                  substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1),
-                fewerFields])
+# instances where crew reported that they sampled sufficiently violated protocal 
+# and therefore were considered NO using objective criteria 
 
-
-# When crew said no but Screening said yes, most crews indicated that they did NO_FISH or NO_FISH_OBSERVED, or
-# reported zero individuals without a comment. I am inclined to think they missunderstood the SAMPLING_SUFFICIENCY
-view(SAMPLEwCOM[SAMPLEwCOM$FISH_SAMPLING_SUFFICIENT=="N" & substring(SAMPLEwCOM$SAMPLED_FISH,1,1)=="Y", fewerFields])
-view(SAMPLEwCOM[SAMPLEwCOM$FISH_SAMPLING_SUFFICIENT=="Y" & substring(SAMPLEwCOM$SAMPLED_FISH,1,1)=="N", fewerFields])
-
-SAMPLE_SUF[substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,2)=="NO", fewerFields]
+# Few disagreements did not have comments and were sent to 
+# to field crews by Michelle. 
