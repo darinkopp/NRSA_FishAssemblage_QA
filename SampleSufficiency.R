@@ -101,7 +101,6 @@ SAMPLE_SUF <- Reduce(function(x,y)
   merge(., FISH_SAMPLING_SUFFICIENT_COMMENT[,c("UID", "COMMENT")], 
         by = "UID", all.x = T)
 
-
 # Assign sufficiency category 
 SAMPLE_SUF <- SAMPLE_SUF %>%
   mutate(FISH_SAMPLING_SUFFICIENT_CORRECTED = 
@@ -224,6 +223,8 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                        ))))))))))))) %>%
   data.frame()
 
+SAMPLE_SUF[SAMPLE_SUF$UID=="2024304",]
+
 #check to confirm all records have been assigned
 if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) & 
    all(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED != "")){
@@ -232,6 +233,10 @@ if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) &
   stop("unassigned records, either NA or blank")
   SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "",]
 }
+
+#Seining Only Sites 
+SAMPLE_SUF[SAMPLE_SUF$PRIM_GEAR==""&!is.na(SAMPLE_SUF$PRIM_HAULS),
+           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "SEINING ONLY"
 
 #results of assignments
 addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 

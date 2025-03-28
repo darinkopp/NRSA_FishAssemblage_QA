@@ -1025,6 +1025,9 @@ all(nrow(fish_col) == nrow(fish_col_original))
 fish_col[fish_col$SITE_ID == "NRS23_SC_10074" & 
            fish_col$LINE == 20, "NAME_COM_CORRECTED"] <- "ALABAMA BASS X BARTRAMS BASS"
 
+# 99 visits should have been deleted during the 2023
+fish_col[fish_col$VISIT_NO=="99","LINE_CORRECTED"]<-"DELETE"
+
 write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
 
 # view the lines that will be removed from the dataset
