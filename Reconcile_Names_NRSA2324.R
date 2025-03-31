@@ -14,7 +14,6 @@ allTheNRSA_Fishcts <- paste0(allTheNRSA, "NRSA0809_fishCts_alltheNRSA.tab") %>%
 SI<-paste0(allTheNRSA, "NRSA0809-1819_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
 
-list.files(allTheNRSA)
 #######################
 
 # Site info file -- locations for 2023-24
@@ -68,24 +67,8 @@ fish_col <- merge(fish_col,
                   all.x = T)
 #######################
 
-# Fish voucher specimens?
-#####
-dir_NRSA_2324%>%
-  paste0("/raw/tabfiles/nrsa2324_fishcollectionWide_vert.tab") %>%
-  read.table(sep = "\t", header = T)%>%
-  filter(!is.na(SAMPLE_ID))%>%
-  dim()
-
-dir_NRSA_2324%>%
-  paste0("/raw/tabfiles/nrsa2324_fishinfoWide.tab") %>%
-  read.table(sep = "\t", header = T)%>%
-  select(CREW_LEAD,CREW_ORG)%>%
-  distinct()
-
-#######################
-
-
 # Function to update Fish Collection
+#######
 # Parameters:
 # FIELD_Name = NAME_COM (name given in field)
 # NAME_COM_CORRECTED = the reconciled name (typically 1819 NAME_COM_CORRECTED)
@@ -104,7 +87,7 @@ updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
   }
   return(df)
 }
-
+######################################
 
 ################################################################################
 # reconcile names
@@ -669,7 +652,7 @@ if(nrow(NewFish)>1){stop("Need to update autecology file")}
 
 # If there are no closely related taxa then google. If there is undertainity in 
 # an assignment then leave blank
-###################################
+#######################################
 
 # Update the names added to the autecology file in the fish collection file 
 # the idea is to make sure NAME_COM_CORRECTED matches the FINAL_NAME in the 
@@ -935,11 +918,8 @@ if(nrow(fish_col_original) == nrow(fish_col)){
 
 fish_col$DATE_COL <- as.character(fish_col$DATE_COL)
 
-# send unknown taxa to Michelle to contact contact field taxonomists for updates, 
-# specific attention was given to taxa that were assigned unknown in the field. 
-# Any updates received will be made directly in IM and exported to NRSA folder,
-# NOTE this filters only 2024 unknowns. taxonomists were already contacted and corrected
-# for 2023 data
+# send unknown taxa to field taxonomists for comments, 
+# Any updates received will be made directly in IM and exported to NRSA folde
 ##############
 Check_Taxa <- fish_col %>%
   filter(NAME_COM_UPR != NAME_COM_CORRECTED |

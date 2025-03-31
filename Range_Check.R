@@ -309,7 +309,7 @@ while(n>=5){
   LargerHUC <- merge(MissingTaxa_HUC, LargerHUC, by = c("HUC_NEW", "TAXA_ID"))%>%
     filter(NON_NATIVE > 0.8|NON_NATIVE <0.2)%>%
     mutate(NON_NATIVE = ifelse(NON_NATIVE > 0.8, "Y", 
-                               ifelse(NON_NATIVE < 0.2, "N", "")),
+                               ifelse(NON_NATIVE < 0.2, "N", NA)),
            Source = paste0(Source, " [HUC", n-1,"]"),
            SpeciesName = "" , ) %>%
     select(c("TAXA_ID", "SpeciesName", "HUC8", "NON_NATIVE", "Source"))
@@ -323,30 +323,52 @@ while(n>=5){
   n = n-2
 }
 
-sum(b$HUC8!=""&is.na(b$NON_NATIVE))
-
 b <- merge(fish_col, 
            Nativeness_RangeMaps, 
            by = c("HUC8","TAXA_ID"), 
            all.x = T)
-unique(b$Source)
-b[!is.na(b$Source)&b$Source == "2008-09/NatureServe [HUC6]",]
 
-Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID==630,]
-Nativeness_RangeMaps[Nativeness_RangeMaps$HUC8 == "H03160204" & Nativeness_RangeMaps$TAXA_ID==552,]
+sum(b$HUC8!=""&is.na(b$NON_NATIVE))
+unique(b$Source)
+b[!is.na(b$Source)&b$Source == "2018-19/2008-09/2018-19 [HUC6] [HUC4]",]
+
+Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID==165,]
+Nativeness_RangeMaps[Nativeness_RangeMaps$HUC8 == "H03160204" & Nativeness_RangeMaps$TAXA_ID == 552, ]
 b[b$HUC8!="" & is.na(b$NON_NATIVE), ]
 
-
+names(Nativeness_RangeMaps)
 #these would be manually checked
 CHECK <- b[b$HUC8!="" & is.na(b$NON_NATIVE),
-           c("HUC8","TAXA_ID","UID","NAME_COM_CORRECTED","SITE_ID")]
-view(b)
-names(Nativeness_RangeMaps)
+           c("HUC8","TAXA_ID","UID", "NAME_COM_CORRECTED", 
+             "SITE_ID","NON_NATIVE","Source")]
 
-nrow(fish_col)
+
+
+# DONT NOT over write "_NEW_FILE" added to name to ensure no problems
+#write.csv(CHECK, "NONNATIVE_CHECK_NEW_FILE.csv")
+
+CHECK<-read.csv("NONNATIVE_CHECK.csv")
+CHECK$SpeciesName <- ""
+Nativeness_RangeMaps<-rbind(Nativeness_RangeMaps,CHECK[,names(Nativeness_RangeMaps)])
+Nativeness_2324 <- merge(fish_col, 
+           Nativeness_RangeMaps, 
+           by = c("HUC8","TAXA_ID"), 
+           all.x = T)
+
+sum(b2$HUC8 != "" & is.na(b2$NON_NATIVE))
+
+head(CHECK)
+fish_col[fish_col$NAME_COM_CORRECTED=="COASTAL CUTTHROAT TROUT",]
+
+library(tmap)
+tmap_mode("view")
+p<-WBD[WBD$huc8=="06010204", "name"]
+tm_shape(p)+
+  tm_borders()
+
 Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID==478&
                        Nativeness_RangeMaps$HUC8=="H01010002",]
-
+WBDHUC
 #these sites do not have coordinates or are outside CONUS
 b[b$HUC8=="","NON_NATIVE"]<-""
 b[b$TAXA_ID=="99999","NON_NATIVE"]<-""
@@ -627,6 +649,7 @@ NATIVE_HUC
 NONNATIVE_HUC[toupper(NONNATIVE_HUC$common_name)=="COMMON CARP",]
 
 WBD <- st_read(dsn = "Supporting Information/WBD_National_GDB/WBD_National_GDB.gdb", layer = "WBDHU8")
+WBD$name
 Nativeness_RangeMaps
 
 # name could not be found
