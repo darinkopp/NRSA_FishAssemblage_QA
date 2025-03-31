@@ -2,7 +2,7 @@ National Rivers and Stream Assessment Fish Assemblage Quality Assurance
 Procedure 2023-2024 (Draft)
 ================
 Darin Kopp, Richard Mitchell, Louis Reynolds, and Dave Peck
-2024-10-24
+3-31-2025
 
 Background: Fish assemblages are a key indicator of biological integrity
 and water quality surveyed by the National Rivers and Streams
