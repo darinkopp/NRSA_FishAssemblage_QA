@@ -15,13 +15,13 @@ efficiently identifies and corrects inconsistencies or errors in the
 data (Figure 1).
 
 ![Schematic of quality assurance procedure for fish
-assemblages](Picture1.png) Name Reconciliation: The name reconciliation
-module harmonizes field identifications with the NRSA taxa list. Any
-identifications that were unknown or not easily reconciled were sent to
-the field crew for comment. If the field crew indicated that updates
-were made, corrections are added to NARS IM. Any taxa that were not
-collected during a previous survey are added to the NRSA taxa list along
-with their autecology information.
+assemblages](QA%20Schematic.png) Name Reconciliation: The name
+reconciliation module harmonizes field identifications with the NRSA
+taxa list. Any identifications that were unknown or not easily
+reconciled were sent to the field crew for comment. If the field crew
+indicated that updates were made, corrections are added to NARS IM. Any
+taxa that were not collected during a previous survey are added to the
+NRSA taxa list along with their autecology information.
 
 Sampling sufficiency: The sampling sufficiency module ensures that
 sampling efforts were consistent with the protocol outlined in the Field
