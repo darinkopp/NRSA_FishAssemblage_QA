@@ -1,32 +1,26 @@
 # Range check and native status
 
-# For each species, query nature serve shapefiles, 
-# non-indigenous aquatic species and previous NRSA surveys. 
-# Extract HUC8 for each record. Then compare to the list of HUC8's 
-# where the 2324 taxa was collected
-#
+# For each species, query natureserve, non-indigenous aquatic species and previous NRSA surveys. 
+# Extract HUC8 for each record.
+
 # Native designated if the HUC where the taxon was collected is also listed in 
 # the native range
 
 # Non-native if the HUC where the taxon was collected is in NAS Non-native range. 
 
 # When a HUC was surveyed during a previous cycle, assign the native/non-native 
-# designation. This is essentially leveraging expert opinion from previous NRSA
-# (i.e. Dave Peck et al.)
+# designation based on PiSCES and previous surveys. 
+# This is essentially leveraging expert opinion from previous NRSA 
+# (i.e. D. Peck et al. and M. Cyterski)
 
-# A manual check of taxa that were unmatched and species could be give 
-# conflicting assignments. 
+# A manual check of unmatched taxa could indicate the the reported taxa is out 
+# the species range conflicting assignments. 
 
-# Unmatched taxa could occur if the Scientific Name is not in NatureServe or 
-# NAS databases, They occur outside Either the HUC8 was not within any 
-# of the sources of the species did not have a record. 
-
+################################################################################
 library(sf)
 library(tidyverse)
 library(nhdplusTools)
-
-################################################################################
-
+library(tmap)
 ################################################################################
 
 
@@ -42,11 +36,6 @@ dir_NRSA_2324 <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324"
 site.info <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
-
-site.info[site.info$SITE_ID=="NRS23_TX_10453",c("LAT_DD83","LON_DD83")]<-c(33.12121461,-96.11233232)
-site.info[site.info$SITE_ID=="NRS23_TX_10504",c("LAT_DD83","LON_DD83")]<-c(33.3825256,-95.12624982)
-site.info[site.info$SITE_ID=="NRS23_TX_10650",c("LAT_DD83","LON_DD83")]<-c(30.73226399,-95.60260147)
-site.info[site.info$SITE_ID=="NRS23_TX_10671",c("LAT_DD83","LON_DD83")]<-c(31.26277343,-94.18733703)
 
 # add missing HUCs -- sometimes this could happen because locations are not yet
 # finalized. the site info file will likely be updated by MW in next version
@@ -78,27 +67,14 @@ for (i in HUCs$UID){
 
 ######################
 
-# Prior survey results -- if a huc8 was surveyed previously, how were the taxa 
-# classified. This is analogous to PBJ used by NAS to assemble their records
-# Files pulled from IM 9/6/2024
+
 #######
-allTheNRSA <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/allTheNRSA/data/tabfiles"
 
-allTheNRSA.site.info <- paste0(allTheNRSA, "/NRSA0809-1819_siteinfo.tab") %>%
-  read.table(sep = "\t", header = T)
 
-allTheNRSA.fishCts <- paste0(allTheNRSA, "/NRSA0809-1819_fishCts_alltheNRSA.tab") %>%
-  read.table(sep = "\t", header = T)
-
-allTheNRSA.NATIVENESS_HUC8 <- allTheNRSA.site.info %>%
-  select(c("UID", "SITE_ID", "HUC8","DSGN_CYCLE")) %>%
-  inner_join(allTheNRSA.fishCts, by = "UID")%>%
-  select(TAXA_ID, HUC8, NON_NATIVE, DSGN_CYCLE)%>%
-  distinct()
 ####################################################
 
-# NRSA taxa list -- most recent. This is needed to assign species 
-# names which are required to match with NatureServe and NAS 
+# NRSA taxa list -- most recent. This is needed to crosswalk 
+# taxa_id to species names 
 ########
 #this should be the most recent taxa list
 nars_taxa_list <- dir_NRSA_2324 %>%
@@ -125,37 +101,109 @@ fish_col <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
   distinct()%>%
   mutate(FINAL_NAME = NAME_COM_CORRECTED)
 
-
-# new taxa that need to be added added to the NARSA taxa list are 
-# removed. These will be changed if they are added to the table. All taxa 
-# should have a TAXA_ID before reaching this step in the future
+# All taxa should have a TAXA_ID before reaching this step in the future
+if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME))
+  {stop("All taxa should have a TAXA_ID; update autecology file")}
 fish_col <- merge(fish_col, 
                   nars_taxa_list[,c("FINAL_NAME","TAXA_ID","NRSA_SPNAME")], 
                   by.x = "NAME_COM_CORRECTED", 
                   by.y = "FINAL_NAME")
+
 fish_col <- merge(fish_col, site.info[,c("UID","HUC8")], by="UID", all.x=T)
 
 ####################################################
 
 # lookup tables for nativeness assignments. 
-# Files obtained from USGS NAS program -- email saved Matt from NAS. 
+# Files obtained from USGS NAS program -- email saved Matt from NAS.
+# and PiSCES (M. Cyrterski)
 #########
 # renamed fields to match NRSA fish collection files
-NATIVE_HUC <- read.csv("native fish HUC list.csv") %>%
-  mutate(HUC8=ifelse(nchar(HUC8) == 7,
-                     paste0("H0",HUC8),
-                     paste0("H", HUC8)),
-         common_name=toupper(common_name))%>%
-  mutate(Source=data_source)%>%
-  mutate(SpeciesName=scientific_name)
 
-NONNATIVE_HUC <- read.csv("nonnative fish HUC list.csv") %>%
+# NatureServe/NAS
+NATIVE_HUC <- read.csv("HUC8TaxaLists/native fish HUC list.csv") %>%
+  mutate(HUC8 = ifelse(nchar(HUC8) == 7,
+                     paste0("H0", HUC8),
+                     paste0("H", HUC8)),
+         common_name = toupper(common_name),
+         source = data_source,
+         scientific_name = scientific_name,
+         NON_NATIVE = "N")%>%
+  select(HUC8, scientific_name, common_name, source, NON_NATIVE)
+
+# NAS
+NONNATIVE_HUC <- read.csv("HUC8TaxaLists/nonnative fish HUC list.csv") %>%
   mutate(HUC8 = ifelse(nchar(HUC8_number_char)==7,
                        paste0("H0",HUC8_number_char),
                        paste0("H", HUC8_number_char)),
-         common_name = toupper(common_name))%>%
-  mutate(Source="NAS")%>%
-  mutate(SpeciesName=scientific_name)
+         common_name = toupper(common_name),
+         source = "NAS",
+         scientific_name = scientific_name,
+         NON_NATIVE = "Y") %>%
+  select(HUC8, scientific_name, common_name, source, NON_NATIVE)
+
+# PiSCES
+library(readxl)
+PiSCES_HUC <- read_xlsx("HUC8TaxaLists/PiSCES_fish_HUCs.xlsx") %>%
+  mutate(HUC8 = ifelse(nchar(HUC)==7,
+                       paste0("H0", HUC),
+                       paste0("H", HUC)),
+         common_name = toupper(Common_name),
+         source = "PiSCES",
+         scientific_name = Scientific_name,
+         NON_NATIVE = ifelse(Origin == "Native", "N", 
+                             ifelse(Origin=="Introduced", "Y", "E")))%>%
+  select(HUC8, scientific_name, common_name, source, NON_NATIVE)
+
+# NRSA
+# Files pulled from IM 9/6/2024
+allTheNRSA <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/allTheNRSA/data/tabfiles"
+
+allTheNRSA.site.info <- paste0(allTheNRSA, "/NRSA0809-1819_siteinfo.tab") %>%
+  read.table(sep = "\t", header = T)
+
+allTheNRSA.fishCts <- paste0(allTheNRSA, "/NRSA0809-1819_fishCts_alltheNRSA.tab") %>%
+  read.table(sep = "\t", header = T)
+
+allTheNRSA.NATIVENESS_HUC8 <- allTheNRSA.site.info %>%
+  select(c("UID", "SITE_ID", "HUC8","DSGN_CYCLE")) %>%
+  inner_join(allTheNRSA.fishCts, by = "UID") %>%
+  select(TAXA_ID, HUC8, NON_NATIVE, DSGN_CYCLE) %>%
+  inner_join(nars_taxa_list[,c("TAXA_ID", "FINAL_NAME", "NRSA_SPNAME")], 
+             by = "TAXA_ID") %>%
+  mutate(DSGN_CYCLE = factor(DSGN_CYCLE, 
+                             levels = c("2018-19", "2013-14", "2008-09")))%>%
+  distinct() %>%
+  rowwise() %>%
+  mutate(common_name = toupper(FINAL_NAME),
+         scientific_name = NRSA_SPNAME, 
+         source = DSGN_CYCLE)%>%
+  select(HUC8, scientific_name, common_name, source, NON_NATIVE)
+########################################
+
+#create master table
+Nativeness_Master_Table <- do.call(
+  rbind,list(allTheNRSA.NATIVENESS_HUC8, PiSCES_HUC, NONNATIVE_HUC, NATIVE_HUC))
+
+#some of these sources overlap, priority is given to NAS/NatureServe because these files are most recent, 
+#PiCSES only includes NRSA 0809, so gave priority to 1819
+Nativeness_Master_Table$source <- 
+  factor(Nativeness_Master_Table$source, levels =  c("NAS", "NatureServe", "2018-19", 
+                                                     "PiSCES", "2013-14", "2008-09"))
+
+
+Nativeness_Master_Table$index <- 
+  paste0(Nativeness_Master_Table$HUC8,"_",Nativeness_Master_Table$scientific_name)
+
+Nativeness_Master_Table <- split(Nativeness_Master_Table,
+                                 Nativeness_Master_Table$index)
+
+# if a HUC8 X SPECIES was surveyed multiple times, select the most recent entry
+Nativeness_Master_Table <- lapply(
+  Nativeness_Master_Table, function(x) 
+    x[order(x$source)[1],])
+
+Nativeness_Master_Table <- do.call(rbind, Nativeness_Master_Table)
+
 ###############################################
 
 ################################################################################
@@ -164,10 +212,8 @@ NONNATIVE_HUC <- read.csv("nonnative fish HUC list.csv") %>%
 
 
 ########
-# I want to create a native/non-native species list by combining Nature Serve, 
-# NAS and previous NRSA Surveys this will be a csv table, with FINAL NAME, HUC8 
-# and NATIVE/NON_NATIVE STATUS the HUC8 will create a crosswalk to the WBD. 
-# for each HUC8 in the US i want to know whether the taxon is native or not.
+# Create a native/non-native species list for each HUC8 by combining Nature Serve, 
+# NAS, previous NRSA Surveys and PiCES.
 ###################################################  
 
 
@@ -198,7 +244,7 @@ for (id in nars2324_Taxa){
       as.character()
     NATIVE <- data.frame(NATIVE_HUC[toupper(NATIVE_HUC$common_name) == species, c("common_name", "HUC8", "Source")])
     colnames(NATIVE)[1] <- "SpeciesName"
-    NONNATIVE <- NONNATIVE_HUC[toupper(NONNATIVE_HUC$common_name)==species, c("common_name", "HUC8", "Source")]
+    NONNATIVE <- NONNATIVE_HUC[toupper(NONNATIVE_HUC$common_name) == species, c("common_name", "HUC8", "Source")]
     colnames(NONNATIVE)[1] <- "SpeciesName"
   }
   
@@ -219,7 +265,7 @@ for (id in nars2324_Taxa){
   PriorSurvey <- split(PriorSurvey, PriorSurvey$HUC8)
   PriorSurvey <- lapply(
     PriorSurvey, function(x) x[order(x$DSGN_CYCLE, decreasing=T)[1],])
-  PriorSurvey<-do.call(rbind,PriorSurvey)
+  PriorSurvey <- do.call(rbind,PriorSurvey)
   
   #set NO Fish to blank 0809 records have non-native == N
   if(id == 99999){PriorSurvey$NON_NATIVE <- ""}
@@ -247,7 +293,7 @@ for (id in nars2324_Taxa){
   out$Source <- factor(out$Source, levels =  c("NAS", "NatureServe", "2018-19", "2013-14", "2008-09"))
   out <- split(out, out$HUC8)
   out <- lapply(out, function(x) x[order(x$Source)[1],])
-  out <- do.call(rbind,out)
+  out <- do.call(rbind, out)
   
   Nativeness_RangeMaps <- rbind(Nativeness_RangeMaps, data.frame(TAXA_ID=id,out))   
 }
@@ -267,8 +313,8 @@ NoFish <- data.frame(unique(fish_col[
   c("TAXA_ID","HUC8")]), SpeciesName = "", 
   NON_NATIVE = "", Source = "2023-24" )
 
-NRHUC8 <- Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID==99999,"HUC8"]
-NoFish <- NoFish[!NoFish$HUC8%in%NRHUC8,]
+NRHUC8 <- Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID == 99999, "HUC8"]
+NoFish <- NoFish[!NoFish$HUC8 %in% NRHUC8,]
 
 Nativeness_RangeMaps <- rbind(Nativeness_RangeMaps, NoFish)
 
@@ -362,7 +408,7 @@ fish_col[fish_col$NAME_COM_CORRECTED=="COASTAL CUTTHROAT TROUT",]
 
 library(tmap)
 tmap_mode("view")
-p<-WBD[WBD$huc8=="06010204", "name"]
+p<-WBD[WBD$huc8=="08060100", "name"]
 tm_shape(p)+
   tm_borders()
 
