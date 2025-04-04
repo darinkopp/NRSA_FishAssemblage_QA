@@ -54,24 +54,20 @@ pt <- st_as_sf(HUCs,
 HUCs$HUC8 <- NA
 for(i in 1:nrow(pt)){
   #i<-1
-  HUCs$HUC8[i] <- get_huc(pt[i,]) %>%
-    select(huc12) %>% 
+  HUCs$HUC8[i] <- get_huc(pt[i,], type = "huc08") %>%
+    select(huc8) %>% 
     st_set_geometry(NULL)
 }
 HUCs$HUC8 <- unlist(HUCs$HUC8)
 
 # add missing HUC8 to the site.info 
 for (i in HUCs$UID){
-  site.info[site.info$UID==i, "HUC8"] <- paste0("H", substring(HUCs[HUCs$UID == i, "HUC8"],0,8))
+  #i<-2022239
+  site.info[site.info$UID==i, "HUC8"] <- paste0("H", HUCs[HUCs$UID == i, "HUC8"])
 }
 
 ######################
 
-
-#######
-
-
-####################################################
 
 # NRSA taxa list -- most recent. This is needed to crosswalk 
 # taxa_id to species names 
@@ -100,6 +96,10 @@ fish_col <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
   select(-TAXA_ID)%>%
   distinct()%>%
   mutate(FINAL_NAME = NAME_COM_CORRECTED)
+
+#this can be removed later-- updated n name reconciliation table
+fish_col[fish_col$NAME_COM_CORRECTED=="LARGEMOUTH BASS (YOY)","NAME_COM_CORRECTED"]<-"LARGEMOUTH BASS"
+fish_col[fish_col$NAME_COM_CORRECTED=="CHINOOK SALMON (YOY)","NAME_COM_CORRECTED"]<-"CHINOOK SALMON"
 
 # All taxa should have a TAXA_ID before reaching this step in the future
 if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME))
@@ -181,18 +181,22 @@ allTheNRSA.NATIVENESS_HUC8 <- allTheNRSA.site.info %>%
 ########################################
 
 #create master table
+##########
 Nativeness_Master_Table <- do.call(
-  rbind,list(allTheNRSA.NATIVENESS_HUC8, PiSCES_HUC, NONNATIVE_HUC, NATIVE_HUC))
+  rbind,
+  list(allTheNRSA.NATIVENESS_HUC8, 
+       PiSCES_HUC, 
+       NONNATIVE_HUC, 
+       NATIVE_HUC))
 
 #some of these sources overlap, priority is given to NAS/NatureServe because these files are most recent, 
 #PiCSES only includes NRSA 0809, so gave priority to 1819
 Nativeness_Master_Table$source <- 
-  factor(Nativeness_Master_Table$source, levels =  c("NAS", "NatureServe", "2018-19", 
-                                                     "PiSCES", "2013-14", "2008-09"))
-
-
+  factor(Nativeness_Master_Table$source, 
+         levels =  c("NAS", "NatureServe", "2018-19",
+                     "PiSCES", "2013-14", "2008-09"))
 Nativeness_Master_Table$index <- 
-  paste0(Nativeness_Master_Table$HUC8,"_",Nativeness_Master_Table$scientific_name)
+  paste0(Nativeness_Master_Table$HUC8, "_", Nativeness_Master_Table$common_name)
 
 Nativeness_Master_Table <- split(Nativeness_Master_Table,
                                  Nativeness_Master_Table$index)
@@ -203,8 +207,19 @@ Nativeness_Master_Table <- lapply(
     x[order(x$source)[1],])
 
 Nativeness_Master_Table <- do.call(rbind, Nativeness_Master_Table)
-
+# drop index file
+Nativeness_Master_Table <- select(Nativeness_Master_Table, -index)
+#add NRSA taxa ID's to master table--- 
+Nativeness_Master_Table <- merge(Nativeness_Master_Table,
+                                 nars_taxa_list[,c("FINAL_NAME", "TAXA_ID")], 
+                                 by.x = c("common_name"),
+                                 by.y = c("FINAL_NAME"),
+                                 all.x = T)
+Nativeness_Master_Table[is.na(Nativeness_Master_Table$TAXA_ID), "TAXA_ID"] <- ""
+Nativeness_Master_Table<-Nativeness_Master_Table[Nativeness_Master_Table$NON_NATIVE!="E",]
 ###############################################
+head(Nativeness_Master_Table)
+anyDuplicated(Nativeness_Master_Table[,c("HUC8","common_name")])
 
 ################################################################################
 # Range Check and Nativeness 
@@ -213,182 +228,149 @@ Nativeness_Master_Table <- do.call(rbind, Nativeness_Master_Table)
 
 ########
 # Create a native/non-native species list for each HUC8 by combining Nature Serve, 
-# NAS, previous NRSA Surveys and PiCES.
+# NAS, previous NRSA Surveys and PiSCES.
 ###################################################  
 
+#sv<-Nativeness_Master_Table
+Nativeness_Master_Table <- sv
 
-# iterate through each taxon collected from 2324 and check range 
-# and nativeness status using the HUC8 -- this is a master table
-# any taxa/HUC8 combinations will need 
-#########
+# loop to look for occurrences with 6 and 4 digit HUCS. if there are no occurrences, 
+# could potential indicate that the specimen was outside the range. Updates new 
+# taxa in nativeness taxa table... I'd like to change that... 
 
-nars2324_Taxa <- unique(fish_col$TAXA_ID) 
-Nativeness_RangeMaps <- data.frame()
-scientificName = T
-for (id in nars2324_Taxa){
-  # id <- 99999
-  #print(id)
-  
-  if(scientificName){
-    # select species name for TAXA_ID
-    species <- nars_taxa_list %>%
-      filter(TAXA_ID == id) %>%
-      select(NRSA_SPNAME) %>%
-      as.character()
-    NATIVE <- data.frame(NATIVE_HUC[NATIVE_HUC$scientific_name == species, c("SpeciesName", "HUC8", "Source")])
-    NONNATIVE <- NONNATIVE_HUC[NONNATIVE_HUC$scientific_name==species, c("SpeciesName", "HUC8", "Source")]
-  } else {
-    species <- nars_taxa_list %>%
-      filter(TAXA_ID == id) %>%
-      select(FINAL_NAME) %>%
-      as.character()
-    NATIVE <- data.frame(NATIVE_HUC[toupper(NATIVE_HUC$common_name) == species, c("common_name", "HUC8", "Source")])
-    colnames(NATIVE)[1] <- "SpeciesName"
-    NONNATIVE <- NONNATIVE_HUC[toupper(NONNATIVE_HUC$common_name) == species, c("common_name", "HUC8", "Source")]
-    colnames(NONNATIVE)[1] <- "SpeciesName"
-  }
-  
-  if(nrow(NATIVE)>0){
-    NATIVE <- data.frame(NATIVE, NON_NATIVE = "N")
-  }
-  
-  if(nrow(NONNATIVE)>0){
-    NONNATIVE <- data.frame(NONNATIVE, NON_NATIVE = "Y")
-  }
-  
-  # check prior survey for new hucs 
-  PriorSurvey <- allTheNRSA.NATIVENESS_HUC8 %>%
-    filter(TAXA_ID == id) %>%
-    distinct()
-  
-  # if a HUC8 was surveyed multiple times, select the most recent entry
-  PriorSurvey <- split(PriorSurvey, PriorSurvey$HUC8)
-  PriorSurvey <- lapply(
-    PriorSurvey, function(x) x[order(x$DSGN_CYCLE, decreasing=T)[1],])
-  PriorSurvey <- do.call(rbind,PriorSurvey)
-  
-  #set NO Fish to blank 0809 records have non-native == N
-  if(id == 99999){PriorSurvey$NON_NATIVE <- ""}
-  
-  if(!is.null(PriorSurvey)){
-    PriorSurvey <- data.frame(SpeciesName = species, 
-                              HUC8 = PriorSurvey$HUC8, 
-                              NON_NATIVE = PriorSurvey$NON_NATIVE, 
-                              Source = PriorSurvey$DSGN_CYCLE)
-  }
-  
-  datalist <- list(NONNATIVE, NATIVE, PriorSurvey)
-  ind <- unlist(lapply(datalist, function(x) nrow(x)>0))
-  
-  if(any(ind)){
-    out <- do.call(rbind, datalist[ind])
-  } else {
-    out <- data.frame(SpeciesName = species, 
-                      HUC8 = "-9999999", 
-                      NON_NATIVE = " ", 
-                      Source = " ")
-  }
-  
-  # collapse duplicated/conflicting results for HUC8: Priotitize NAS, NATURESERVE and previous surveys
-  out$Source <- factor(out$Source, levels =  c("NAS", "NatureServe", "2018-19", "2013-14", "2008-09"))
-  out <- split(out, out$HUC8)
-  out <- lapply(out, function(x) x[order(x$Source)[1],])
-  out <- do.call(rbind, out)
-  
-  Nativeness_RangeMaps <- rbind(Nativeness_RangeMaps, data.frame(TAXA_ID=id,out))   
-}
-
-
-#all submitted taxa accounted for! 
-all(nars2324_Taxa %in% Nativeness_RangeMaps$TAXA_ID)
-
-Nativeness_RangeMaps <- sv
-#These taxa do not have a record in any of the databases 
-Nativeness_RangeMaps[Nativeness_RangeMaps$HUC8 == "-9999999",]
-#these sites do not have coordinates or are outside CONUS
-Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID=="99999", "NON_NATIVE"]<-""
-#add HUCS for sites that did not detect fish
-NoFish <- data.frame(unique(fish_col[
-  fish_col$TAXA_ID==99999 & fish_col$HUC8 != "", 
-  c("TAXA_ID","HUC8")]), SpeciesName = "", 
-  NON_NATIVE = "", Source = "2023-24" )
-
-NRHUC8 <- Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID == 99999, "HUC8"]
-NoFish <- NoFish[!NoFish$HUC8 %in% NRHUC8,]
-
-Nativeness_RangeMaps <- rbind(Nativeness_RangeMaps, NoFish)
-
-##### add missing HUCs to table
-# sv <- Nativeness_RangeMaps
-
-
+# initialize loop
 MissingTaxa_HUC <- merge(fish_col, 
-                         Nativeness_RangeMaps, 
-                         by = c("HUC8", "TAXA_ID"), 
+                         Nativeness_Master_Table, 
+                         by.x = c("HUC8", "TAXA_ID"),
+                         by.y = c("HUC8", "TAXA_ID"),
                          all.x = T)
-n=7
-#these taxa do not have native/nonnative designation
-#the need to be added to the Nativeness maps
-Nativeness_RangeMaps[Nativeness_RangeMaps$HUC8 == "-9999999",]
-#while state ment here=== keep reunning while this is >0
-while(n>=5){
-  #sum(is.na(MissingTaxa_HUC$NON_NATIVE) & MissingTaxa_HUC$HUC8!="")
+MissingTaxa_HUC[MissingTaxa_HUC$TAXA_ID==99999,"NON_NATIVE"] <- ""
+#GU and Selawik do not have HUCs 
+MissingTaxa_HUC[is.na(MissingTaxa_HUC$HUC8), "NON_NATIVE"] <- ""
+MissingTaxa_HUC[is.na(MissingTaxa_HUC$HUC8), "HUC8"] <- ""
+
+# these taxa and Huc8 need to ba added to the table
+# by searching for occurrences at the HUC6 and then HUC4
+# levels. 
+
+MissingTaxa_HUC <- MissingTaxa_HUC %>%
+  filter(is.na(NON_NATIVE) & HUC8 != "")%>%
+  select(c("HUC8","TAXA_ID", "common_name", "scientific_name"))
+
+# Iterator to select the huc level
+n = 7
+# new taxa to add to master nativeness table
+add2master <- data.frame()
+while(n >= 5){
   
-  #add HUC6
-  MissingTaxa_HUC <- MissingTaxa_HUC%>%
-    filter(is.na(NON_NATIVE) & HUC8!="")%>%
-    select(c("HUC8","TAXA_ID"))%>%
+  # add New HUC (6 or 4)
+  MissingTaxa_HUC <- MissingTaxa_HUC %>%
     mutate(HUC_NEW = substring(HUC8, 1, n)) %>% 
     distinct() 
   
-  # This calculates percentage of HUC8s with with native/nonnative
-  # record within the larger HUC
-  LargerHUC <- Nativeness_RangeMaps %>%
-    filter(HUC8!="-9999999") %>%
+  # This calculates percentage of HUC8s with native/nonnative
+  # occurrences within the larger HUC
+  LargerHUC <- Nativeness_Master_Table %>%
     mutate(HUC_NEW = substring(HUC8, 1, n)) %>%
     group_by(HUC_NEW, TAXA_ID) %>% 
     reframe(TAXA_ID = unique(TAXA_ID),
             NON_NATIVE = mean(NON_NATIVE=="Y"), 
-            Source = paste0(unique(Source), collapse = "/"))
+            source = paste0(unique(source), collapse = "/"))
   
-  # Use this to update nativeness maps
-  LargerHUC <- merge(MissingTaxa_HUC, LargerHUC, by = c("HUC_NEW", "TAXA_ID"))%>%
-    filter(NON_NATIVE > 0.8|NON_NATIVE <0.2)%>%
+  # Use this to update nativeness maps, this resolves any potentially 
+  # conflicting designations
+  LargerHUC <- merge(MissingTaxa_HUC, 
+                     LargerHUC, by = c("HUC_NEW", "TAXA_ID"))%>%
+    filter(NON_NATIVE > 0.8 | NON_NATIVE < 0.2) %>%
     mutate(NON_NATIVE = ifelse(NON_NATIVE > 0.8, "Y", 
-                               ifelse(NON_NATIVE < 0.2, "N", NA)),
-           Source = paste0(Source, " [HUC", n-1,"]"),
-           SpeciesName = "" , ) %>%
-    select(c("TAXA_ID", "SpeciesName", "HUC8", "NON_NATIVE", "Source"))
+                               ifelse(NON_NATIVE < 0.2, 
+                                      "N", NA)),
+           source = paste0(source, " [HUC", n-1, "]"),
+           scientific_name = "" ,
+           common_name = "")%>%
+    select(-HUC_NEW)
   
-  Nativeness_RangeMaps <- rbind(Nativeness_RangeMaps, LargerHUC)
+  # list of taxa to rbind to Nativeness_Master_Table
+  add2master <- rbind(add2master, LargerHUC)
   
-  MissingTaxa_HUC <- merge(fish_col, 
-                           Nativeness_RangeMaps, 
-                           by = c("HUC8","TAXA_ID"), 
-                           all.x = T)
+  #up data for next iteration
+  MissingTaxa_HUC <- merge(MissingTaxa_HUC,
+                           add2master[c("HUC8", "TAXA_ID", "NON_NATIVE")],
+                           by = c("HUC8", "TAXA_ID"), 
+                           all.x = T) %>%
+    filter(is.na(NON_NATIVE))%>%
+    select(-NON_NATIVE)
+ 
   n = n-2
 }
 
+Nativeness_Master_Table <- rbind(add2master, Nativeness_Master_Table)
 b <- merge(fish_col, 
-           Nativeness_RangeMaps, 
+           Nativeness_Master_Table, 
            by = c("HUC8","TAXA_ID"), 
            all.x = T)
 
-sum(b$HUC8!=""&is.na(b$NON_NATIVE))
-unique(b$Source)
-b[!is.na(b$Source)&b$Source == "2018-19/2008-09/2018-19 [HUC6] [HUC4]",]
-
-Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID==165,]
-Nativeness_RangeMaps[Nativeness_RangeMaps$HUC8 == "H03160204" & Nativeness_RangeMaps$TAXA_ID == 552, ]
-b[b$HUC8!="" & is.na(b$NON_NATIVE), ]
-
-names(Nativeness_RangeMaps)
-#these would be manually checked
-CHECK <- b[b$HUC8!="" & is.na(b$NON_NATIVE),
-           c("HUC8","TAXA_ID","UID", "NAME_COM_CORRECTED", 
-             "SITE_ID","NON_NATIVE","Source")]
+#these sites do not have coordinates or are outside CONUS
+b[b$TAXA_ID=="99999", "NON_NATIVE"] <- ""
 
 
+dim(b)
+sum(b$HUC8!="" & !is.na(b$HUC8) & is.na(b$NON_NATIVE))
+
+sort(table(b$source))
+b[!is.na(b$source) & b$source == "2013-14/2018-19 [HUC4]",]
+b[b$HUC8!="" & !is.na(b$HUC8) & is.na(b$NON_NATIVE), ]
+b[b$TAXA_ID == 254&b$HUC8 == "H02040104", ]
+b[b$TAXA_ID == 253&b$HUC8 == "H02040104", ]
+b[b$TAXA_ID == 204&b$HUC8 == "H04080201", ]
+b[b$TAXA_ID == 21&b$HUC8 == "H12020007", ]
+
+
+# these need to be manually checked. The species were not found 
+# within the HUC4 by any of the sources. Could be a new taxon or a indication 
+# of a range violation
+CHECK_new <- b[b$HUC8!="" & !is.na(b$HUC8) & is.na(b$NON_NATIVE),
+               c("HUC8","TAXA_ID", "UID", "NAME_COM_CORRECTED", 
+                 "SITE_ID", "NON_NATIVE", "source")]
+
+
+CHECK_new$LINEID <- paste0(CHECK_new$TAXA_ID, "-", CHECK_new$UID)
+CHECK$LINEID <- paste0(CHECK$TAXA_ID, "-", CHECK$UID)
+
+
+
+#these need to be checked again
+CHECK_new <- rbind(CHECK_new[!CHECK_new$LINEID%in%CHECK$LINEID,
+                             c("HUC8", "TAXA_ID", "UID",
+                               "NAME_COM_CORRECTED", 
+                               "SITE_ID", "NON_NATIVE")],
+                   CHECK[CHECK$LINEID%in%CHECK_new$LINEID, 
+                         c("HUC8", "TAXA_ID", "UID",
+                           "NAME_COM_CORRECTED", 
+                           "SITE_ID", "NON_NATIVE")])
+
+# DONT NOT over write "_NEW_FILE" added to name to ensure no problems
+#write.csv(CHECK, "NONNATIVE_CHECK_NEW_FILE.csv")
+write.csv(CHECK_new,"CHECK_2.csv")
+
+library(tmap)
+tmap_mode("view")
+p <- WBD[WBD$huc8 == "WALLEYE", "name"]
+tm_shape(p)+
+  tm_borders()
+
+#these were already checked
+nrow()
+
+(merge(CHECK_new, CHECK[,c(UID,TAXA_ID)], by ),)
+rbind(CHECK, CHECK_new)
+
+dim(CHECK)
+sum(!CHECK_new$TAXA_ID%in%CHECK$TAXA_ID)
+CHECK_new[!CHECK_new$TAXA_ID%in%CHECK$TAXA_ID,]
+sum(!CHECK$TAXA_ID%in%CHECK_new$TAXA_ID)
+CHECK[!CHECK$TAXA_ID%in%CHECK_new$TAXA_ID,]
+setdiff(CHECK_new$TAXA_ID,CHECK$TAXA_ID)
 
 # DONT NOT over write "_NEW_FILE" added to name to ensure no problems
 #write.csv(CHECK, "NONNATIVE_CHECK_NEW_FILE.csv")
@@ -406,18 +388,12 @@ sum(b2$HUC8 != "" & is.na(b2$NON_NATIVE))
 head(CHECK)
 fish_col[fish_col$NAME_COM_CORRECTED=="COASTAL CUTTHROAT TROUT",]
 
-library(tmap)
-tmap_mode("view")
-p<-WBD[WBD$huc8=="08060100", "name"]
-tm_shape(p)+
-  tm_borders()
+
 
 Nativeness_RangeMaps[Nativeness_RangeMaps$TAXA_ID==478&
                        Nativeness_RangeMaps$HUC8=="H01010002",]
 WBDHUC
-#these sites do not have coordinates or are outside CONUS
-b[b$HUC8=="","NON_NATIVE"]<-""
-b[b$TAXA_ID=="99999","NON_NATIVE"]<-""
+
 
 #these taxa do not have native/nonnative designation
 #the need to be added to the Nativeness maps
