@@ -292,7 +292,6 @@ Fuzzy_result <- apply(Fuzzy_result, 2,
                       function(x) list(names(x)[order(x)[1:15]]))
 #############################################
 
-
 # Visually inspect NAME_COM to closest matching NAME_COM_CORRECTED in NRSA
 # autecology dataset. 
 Fuzzy_result
@@ -629,34 +628,9 @@ NewFish <- fish_col %>%
   select(NAME_COM_UPR, PSTL_CODE) %>%
   distinct()
 #######################################
+NewFish
 
-if(nrow(NewFish)>1){stop("Need to update autecology file")}
-
-# Copy autecology file from O: drive and update names/autecology file manually
-# this should be the file from the previous years survey... but because we added
-# taxa during the 2023 QA evaluation, we can used the taxa list written to the
-# 2324 directory
-#########
-# do not copy unless you are prepared to overwrite
-# file.copy("O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324/data/tabfiles/nrsa2324_fish_taxa.tab",
-#           "nrsa2324_fish_taxa_NewTaxa.tab")
-
-
-# open copied file in excel and create .csv file. Add any new taxa with the 
-# appropriate information. Confirm "NAME_COM" is among AFS accepted names 
-# (Names-of-Fishes-8-Table1.pdf)), otherwise identify the most similar species 
-# using "SP. CF." in the scientific name. 
-
-# to add autecology for new taxa its best (easiest) to sort by family, genus 
-# and species and copy traits for closely related taxa. 
-
-# If there are no closely related taxa then google. If there is undertainity in 
-# an assignment then leave blank
-#######################################
-
-# Update the names added to the autecology file in the fish collection file 
-# the idea is to make sure NAME_COM_CORRECTED matches the FINAL_NAME in the 
-# autecology file
+# Update the names in the fish collection file 
 ##########
 # Guam taxa -- note invertebrates submitted with fish are assigned "NO FISH"
 # and eventually removed by LINE_CORRECTED
@@ -898,10 +872,41 @@ fish_col <- fish_col %>%
 
 ###################################
 
+# all names should have a record in the autecology file 
+if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME)){
+  stop("Need to update autecology file")
+} else {
+  print("all taxa in autecology file")}
+
+# Copy autecology file from O: drive and update names/autecology file manually
+# this should be the file from the previous years survey... but because we added
+# taxa during the 2023 QA evaluation, we can used the taxa list written to the
+# 2324 directory
+#########
+# do not copy unless you are prepared to overwrite
+# file.copy("O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324/data/tabfiles/nrsa2324_fish_taxa.tab",
+#           "nrsa2324_fish_taxa_NewTaxa.tab")
+
+
+# open copied file in excel and create .csv file. Add any new taxa with the 
+# appropriate information. Confirm "NAME_COM" is among AFS accepted names 
+# (Names-of-Fishes-8-Table1.pdf)), otherwise identify the most similar species 
+# using "SP. CF." in the scientific name. 
+
+# to add autecology for new taxa its best (easiest) to sort by family, genus 
+# and species and copy traits for closely related taxa. 
+
+# If there are no closely related taxa then google. If there is uncertainty in 
+# an assignment then leave blank
+#######################################
+
+
 # check to confirm that all taxa on fish collection file have autecology information
 #########
-nars_taxa_list <- read.table("nrsa2324_fish_taxa_NewTaxa.tab", sep = "\t", header=T)
+# read in new taxa list if update were made
+#nars_taxa_list <- read.table("nrsa2324_fish_taxa_NewTaxa.tab", sep = "\t", header=T)
 
+table(nars_taxa_list2[nars_taxa_list2$X!="","X.1"])
 # confirm that all taxa in the autecology file have correct names 
 if(all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME)){
   print("All taxa in autecology file")
@@ -925,7 +930,7 @@ Check_Taxa <- fish_col %>%
   filter(NAME_COM_UPR != NAME_COM_CORRECTED |
            str_detect(NAME_COM_CORRECTED, "UNKNOWN"))%>%
   filter(NAME_COM_CORRECTED != "NO FISH") %>%
-  filter(grepl("2024", DATE_COL))%>%
+  #filter(grepl("2024", DATE_COL))%>%
   select(c("UID", "SITE_ID", "VISIT_NO", "DATE_COL", 
            "TAG","LINE", "NAME_COM", 
            "NAME_COM_CORRECTED","VOUCH_NUM", "VOUCH_PHOTO", 
@@ -1005,10 +1010,16 @@ all(nrow(fish_col) == nrow(fish_col_original))
 fish_col[fish_col$SITE_ID == "NRS23_SC_10074" & 
            fish_col$LINE == 20, "NAME_COM_CORRECTED"] <- "ALABAMA BASS X BARTRAMS BASS"
 
+# removing (YOY) - causes issues with duplicated common names in taxa table
+fish_col[fish_col$NAME_COM_CORRECTED=="LARGEMOUTH BASS (YOY)","NAME_COM_CORRECTED"]<-"LARGEMOUTH BASS"
+fish_col[fish_col$NAME_COM_CORRECTED=="CHINOOK SALMON (YOY)","NAME_COM_CORRECTED"]<-"CHINOOK SALMON"
+
 # 99 visits should have been deleted during the 2023
 fish_col[fish_col$VISIT_NO=="99","LINE_CORRECTED"]<-"DELETE"
 
-write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
+
+# write corrected file
+#write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
 
 # view the lines that will be removed from the dataset
 view(fish_col[fish_col$LINE_CORRECTED == "DELETE",])
