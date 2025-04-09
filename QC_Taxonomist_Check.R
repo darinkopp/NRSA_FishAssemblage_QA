@@ -243,15 +243,21 @@ LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_
   mutate(YEAR=substring(DATE_COL,nchar(DATE_COL)-3,nchar(DATE_COL)))
 
 # correct line/tag numbers in fish_col
-FINAL_QC_Eval <- merge(fish_col, LAB_QA,  
+FINAL_QC_Eval <- merge(fish_col[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG", 
+                                   "LINE","NAME_COM_CORRECTED",
+                                   "VOUCH_PHOTO", "VOUCH_UNK", 
+                                   "VOUCH_QA", "VOUCH_NUM")], LAB_QA,  
            by.y = c("SITE.ID", "VISIT.NUMBER", "YEAR", "TAG"), 
            by.x = c("SITE_ID", "VISIT_NO", "YEAR", "TAG"),
            all.y = T)
 
 FINAL_QC_Eval$QC_Agree <- toupper(FINAL_QC_Eval$COMMON.NAME)==FINAL_QC_Eval$NAME_COM_CORRECTED
-
-FINAL_QC_Eval
 mean(FINAL_QC_Eval$QC_Agree,na.rm = T)
+
+view(FINAL_QC_Eval)
+sum(duplicated(FINAL_QC_Eval[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]))
+write.csv(FINAL_QC_Eval, "QC_Check_DK_4092025.csv")
+
 # check for agreements.
 #############
 # Tags are sometimes unreliable,

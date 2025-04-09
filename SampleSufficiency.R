@@ -18,7 +18,6 @@
  
 # Sufficent >= 90% of reach sampled (accomodates rounding)
 # Large non-wadeable rivers have mean CW >=13
-# -Sufficent = >500 individuals collected or >=95% of reach sampled
 
 # Site specific modifications can be made based on comments provided by field
 # crews
@@ -31,7 +30,7 @@ dir_NRSA_2324 <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324"
 site.info <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
-
+nrow(site.info)
 
 # Fish Collection File -- provides number of individuals
 # this will change when database is updated
@@ -223,7 +222,6 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                        ))))))))))))) %>%
   data.frame()
 
-SAMPLE_SUF[SAMPLE_SUF$UID=="2024304",]
 
 #check to confirm all records have been assigned
 if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) & 
@@ -233,15 +231,12 @@ if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) &
   stop("unassigned records, either NA or blank")
   SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "",]
 }
+SAMPLE_SUF[(!SAMPLE_SUF$UID%in%site.info$UID),"SITE_ID"]
+site.info[(!site.info$UID%in%SAMPLE_SUF$UID),]
 
 #Seining Only Sites 
 SAMPLE_SUF[SAMPLE_SUF$PRIM_GEAR==""&!is.na(SAMPLE_SUF$PRIM_HAULS),
            "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "SEINING ONLY"
-
-#results of assignments
-addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 
-                 SAMPLE_SUF$FISH_PROTOCOL))
-
 
 # compare results entered by field Crew to decision 
 fewerFields<- c("UID","SITE_ID","FISH_SAMPLING_SUFFICIENT", 
@@ -275,8 +270,14 @@ SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022901,2022910,2022700,2022804,2022901,2022910,
                                2024129,2023170),
            "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "NO-SITE CONDITIONS"
 
-# instances where crew reported that they sampled sufficiently violated protocal 
+# instances where crew reported that they sampled sufficiently but violated protocol 
 # and therefore were considered NO using objective criteria 
 
+#results of assignments
+table <- addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 
+                          SAMPLE_SUF$FISH_PROTOCOL))
+write.csv(table, "Sampling_Suffiency_Summary.csv")
+
+#view(Check_Sampling)
 # Few disagreements did not have comments and were sent to 
 # to field crews by Michelle. 

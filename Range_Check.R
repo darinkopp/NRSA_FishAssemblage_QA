@@ -220,7 +220,7 @@ Nativeness_Master_Table<-Nativeness_Master_Table[Nativeness_Master_Table$NON_NAT
 ###############################################
 head(Nativeness_Master_Table)
 anyDuplicated(Nativeness_Master_Table[,c("HUC8","common_name")])
-
+nrow(Nativeness_Master_Table)
 ################################################################################
 # Range Check and Nativeness 
 ################################################################################
@@ -330,10 +330,6 @@ CHECK_new$COMMENTS <- ""
 CHECK_new$NAME_CORRECTION <- ""
 
 
-# add comments field when taxon is outside reported range
-colnames(CHECK)[9] <- "COMMENTS"
-colnames(CHECK)[10] <-"NAME_CORRECTION"
-
 
 # DONT NOT overwrite!!! add date to file after written to ensure no problems
 #write.csv(CHECK_new, "checks/NONNATIVE_CHECK_NEW_FILE.csv")
@@ -349,6 +345,8 @@ tm_shape(p)+
 
 
 newTaxa <- read.csv("checks/NONNATIVE_CHECK_NEW_FILE_04042025.csv")
+names(newTaxa)
+nrow(newTaxa[newTaxa[,"NAME_CORRECTION"]!="",])
 #correct lines that had range violation
 ########
 updates <- newTaxa[newTaxa$NAME_CORRECTION != "",
@@ -366,22 +364,54 @@ searched_taxa <- unique(data.frame(newTaxa[,c("HUC8", "TAXA_ID", "NON_NATIVE")],
            scientific_name = "",
            COMMENTS = "SEARCHED by DK",
            source = "2023-24")) 
+
 if(anyDuplicated(searched_taxa[,c("HUC8","TAXA_ID")])){
   stop("duplicated taxaXHUC8")
 }
 ###################################
 add2master <- rbind(add2master, searched_taxa)
 
-
+table(add2master$COMMENTS)
+length(grep("HUC6",add2master$COMMENTS))
 NRSA_Nativeness_Table <- rbind(Nativeness_Master_Table, add2master[,-6])%>%
   filter(TAXA_ID != "") %>%
   select(c("HUC8", "source", "NON_NATIVE", "TAXA_ID"))
 
+write.csv(NRSA_Nativeness_Table, "NRSA_Nativeness_Table.csv")
+
+library(tmap)
+WBD <- st_read(dsn = "Supporting Information/WBD_National_GDB/WBD_National_GDB.gdb", layer = "WBDHU8")
+head(NRSA_Nativeness_Table)
+CONUS <- c(1:18)
+CONUS <- ifelse(nchar(CONUS)==1, paste0("0",CONUS),CONUS)
+HUCS<-HUCS[substring(HUCS,1,2)%in%CONUS]
+
+NON_NativeP <- NRSA_Nativeness_Table%>%
+  group_by(HUC8)%>%
+  summarize(NNP = mean(NON_NATIVE=="Y"))%>%
+  mutate(HUC8 = substring(HUC8,2))%>%
+  filter(substring(HUC8,1,2) %in% CONUS)
+nrow(NON_NativeP)
+tmap_mode("view")
+tmap_mode("plot")
+
+p <- merge(WBD,NON_NativeP, by.x = "huc8", by.y = "HUC8")
+
+p2 <- WBD[WBD$huc8%in%substring(NRSA2324,2),]
+windows()
+T1<-tm_shape(p)+
+  tm_polygons("NNP")+
+  tm_shape(p2)+
+  tm_borders(col = "green")
+tmap_save(T1,"NativenessExample.jpeg", width = 12, height = 10, units = "in")
+
 finished <- merge(fish_col, 
                   NRSA_Nativeness_Table[, c("HUC8", "TAXA_ID", "NON_NATIVE")], 
-                  by =c("HUC8", "TAXA_ID"), all.x = T)
+                  by = c("HUC8", "TAXA_ID"), all.x = T)
+NRSA2324 <- unique(finished$HUC8)
+substring(NRSA2324,2)
 
-write.csv
+write.csv(finished,"Fish_collection_Corrected.csv")
 
 
 # Use crew identification when no other information exists
