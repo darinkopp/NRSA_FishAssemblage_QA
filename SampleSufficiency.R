@@ -3,7 +3,7 @@
 # 4 sampleing protocals exist for fish assemblages. 
 # For all streams, 40 channel widths is necessary to characterize assemblage
 # the transect lengths must be 40CW | min(150) | max(4000)
-# Flag transect length if <= 35CW | <145 (accomodates rounding)
+# Flag transect length if <= 35CW | <145 (accommodates rounding)
 
 
 # Small wadeable streams have a mean CW <13m; 
@@ -24,16 +24,17 @@
 
 library(tidyverse)
 
+# Data
+############
 # NRSA IM directory
 dir_NRSA_2324 <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324"
 
 site.info <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
-nrow(site.info)
+
 
 # Fish Collection File -- provides number of individuals
-# this will change when database is updated
 INDIV <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
                       sep = "\t") %>%
   filter(LINE_CORRECTED != "DELETE") %>%
@@ -56,13 +57,10 @@ FISH_SAMPLING_SUFFICIENT_COMMENT <- dir_NRSA_2324 %>%
   filter(SAMPLE_TYPE=="FISH")%>%
   filter(grepl("FISH_SAMPLING_SUFFICIENT", FLAG))
 
-
 CrewLead <- dir_NRSA_2324%>%
-  paste0("/raw/tabfiles/nrsa2324_crew.tab") %>%
+  paste0("/raw/tabfiles/nrsa2324_verificationWide.tab") %>%
   read.table(sep = "\t", header = T) %>%
-  filter(PARAMETER == "CREW_LEADER") %>%
-  mutate(CREW_LEADER = RESULT) %>%
-  select(UID,CREW_LEADER)
+  select(UID, CREW)
 
 # site verification file 
 TRCHLEN <- dir_NRSA_2324%>%
@@ -99,8 +97,10 @@ SAMPLE_SUF <- Reduce(function(x,y)
         by = "UID", all.x = T)%>%
   merge(., FISH_SAMPLING_SUFFICIENT_COMMENT[,c("UID", "COMMENT")], 
         by = "UID", all.x = T)
+####################################################
 
-# Assign sufficiency category 
+# Assign sufficiency category
+############
 SAMPLE_SUF <- SAMPLE_SUF %>%
   mutate(FISH_SAMPLING_SUFFICIENT_CORRECTED = 
            ifelse(
@@ -221,9 +221,14 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                          
                        ))))))))))))) %>%
   data.frame()
+####################################################
 
+#Seining Only Sites 
+SAMPLE_SUF[SAMPLE_SUF$PRIM_GEAR == "" & !is.na(SAMPLE_SUF$PRIM_HAULS),
+           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "SEINING ONLY"
 
-#check to confirm all records have been assigned
+# check to confirm all records have been assigned
+########
 if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) & 
    all(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED != "")){
   print ("All entries assigned sufficency class")
@@ -231,21 +236,26 @@ if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) &
   stop("unassigned records, either NA or blank")
   SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "",]
 }
-SAMPLE_SUF[(!SAMPLE_SUF$UID%in%site.info$UID),"SITE_ID"]
-site.info[(!site.info$UID%in%SAMPLE_SUF$UID),]
+########################################
 
-#Seining Only Sites 
-SAMPLE_SUF[SAMPLE_SUF$PRIM_GEAR==""&!is.na(SAMPLE_SUF$PRIM_HAULS),
-           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "SEINING ONLY"
+# check UIDs from site info
+########
+# GU and Selawik did not have record in site.info. 
+# This is ok because they did not sample fish
+SAMPLE_SUF[(!SAMPLE_SUF$UID%in%site.info$UID), "SITE_ID"]
+#sites in site info that did not have fishing record
+site.info[(!site.info$UID%in%SAMPLE_SUF$UID), "UID"]
+########################################
 
-# compare results entered by field Crew to decision 
+# compare results entered by field Crew to objective criteria 
+#########
 fewerFields<- c("UID","SITE_ID","FISH_SAMPLING_SUFFICIENT", 
                 "FISH_SAMPLING", "FISH_PROTOCOL","TRCHLEN", 
                 "RCHWIDTH", "TRCHLEN_CWIDTH", "TRCHLEN_FLAG",
                 "RCH_LENGTH", "CWIDTH_Sampled", "TOTALINDV", 
                 "FISH_SAMPLING_SUFFICIENT_CORRECTED","PRIM_GEAR",
                 "PRIM_LENGTH_FISHED", "SEC_GEAR","SEC_LENGTH_FISHED", 
-                "CREW_LEADER", "COMMENT.x","COMMENT.y")
+                "CREW", "COMMENT.x","COMMENT.y")
 
 # view disagreements
 Check_Sampling <- SAMPLE_SUF[
@@ -255,7 +265,8 @@ Check_Sampling <- SAMPLE_SUF[
     substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1) == "N", 
   fewerFields]
 
-#write.csv(Check_Sampling, "Check_Sampling.csv")
+# instances where crew reported that they sampled sufficiently but violated protocol 
+# and therefore were considered NO using objective criteria 
 
 # checked output and manually corrected sites where crew indicated that
 # they did not sample sufficiently, but still reported fish length. 
@@ -270,14 +281,17 @@ SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022901,2022910,2022700,2022804,2022901,2022910,
                                2024129,2023170),
            "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "NO-SITE CONDITIONS"
 
-# instances where crew reported that they sampled sufficiently but violated protocol 
-# and therefore were considered NO using objective criteria 
-
-#results of assignments
-table <- addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 
-                          SAMPLE_SUF$FISH_PROTOCOL))
-write.csv(table, "Sampling_Suffiency_Summary.csv")
-
 #view(Check_Sampling)
 # Few disagreements did not have comments and were sent to 
 # to field crews by Michelle. 
+#write.csv(Check_Sampling, "Check_Sampling.csv")
+############################
+
+# results of assignment
+table <- addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 
+                          SAMPLE_SUF$FISH_PROTOCOL))
+############################
+table
+#write.csv(table, "Sampling_Suffiency_Summary.csv")
+
+write.csv(SAMPLE_SUF[,c("UID","FISH_SAMPLING_SUFFICIENT_CORRECTED")], "2324_Fish_Sampling_Sufficent.csv")

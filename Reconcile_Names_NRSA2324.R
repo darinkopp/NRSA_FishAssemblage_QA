@@ -44,14 +44,18 @@ fish_col <- dir_NRSA_2324%>%
   mutate(HAS_COUNT = ifelse(sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19), 
                                 na.rm = T) > 0, "Y", "N"))
 
-# add name of fish taxonomist
-FishTaxonomist <- dir_NRSA_2324%>%
-  paste0("/raw/tabfiles/nrsa2324_crew.tab") %>%
-  read.table(sep = "\t", header = T) %>%
-  filter(PARAMETER == "FISH_TAXONOMIST") %>%
-  mutate(FISH_TAXONOMIST = RESULT) %>%
-  select(UID,FISH_TAXONOMIST)
+# # add name of fish taxonomist
+# FishTaxonomist <- dir_NRSA_2324%>%
+#   paste0("/raw/tabfiles/nrsa2324_crew.tab") %>%
+#   read.table(sep = "\t", header = T) %>%
+#   filter(PARAMETER == "FISH_TAXONOMIST") %>%
+#   mutate(FISH_TAXONOMIST = RESULT) %>%
+#   select(UID,FISH_TAXONOMIST)
 
+FishTaxonomist <- dir_NRSA_2324%>%
+  paste0("/raw/tabfiles/nrsa2324_verificationWide.tab") %>%
+  read.table(sep = "\t", header = T) %>%
+  select(UID, CREW)
 
 fish_col <- merge(fish_col, FishTaxonomist, by = "UID", all.x = T)
 
@@ -96,7 +100,7 @@ updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
 # save original file as check to ensure all records are accounted for 
 fish_col_original <- fish_col
 
-
+dim(fish_col_original)
 # Update direct matches. Records that have a match in NRSA taxa list 
 #######
 # Add NAME_COM_UPR, upper case of NAME_COM for matching with final name
@@ -906,7 +910,7 @@ if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME)){
 # read in new taxa list if update were made
 #nars_taxa_list <- read.table("nrsa2324_fish_taxa_NewTaxa.tab", sep = "\t", header=T)
 
-table(nars_taxa_list2[nars_taxa_list2$X!="","X.1"])
+
 # confirm that all taxa in the autecology file have correct names 
 if(all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME)){
   print("All taxa in autecology file")
@@ -936,7 +940,7 @@ Check_Taxa <- fish_col %>%
            "NAME_COM_CORRECTED","VOUCH_NUM", "VOUCH_PHOTO", 
            "VOUCH_UNK", "VOUCH_QA", "COUNT_6", "COUNT_12", 
            "COUNT_18", "COUNT_19", "HAS_COUNT", 
-           "FISH_TAXONOMIST", "FLAG", "TAXA_ID", 
+           "CREW", "FLAG", "TAXA_ID", 
            "COMMENT"))
 # Vise list
 View(Check_Taxa)

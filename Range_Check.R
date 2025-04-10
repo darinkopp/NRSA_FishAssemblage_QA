@@ -1,7 +1,7 @@
 # Range check and native status
 
-# For each species, query natureserve, non-indigenous aquatic species and previous NRSA surveys. 
-# Extract HUC8 for each record.
+# For each species, query natureserve, non-indigenous aquatic species,
+# previous NRSA surveys and PiSCES. 
 
 # Native designated if the HUC where the taxon was collected is also listed in 
 # the native range
@@ -9,9 +9,8 @@
 # Non-native if the HUC where the taxon was collected is in NAS Non-native range. 
 
 # When a HUC was surveyed during a previous cycle, assign the native/non-native 
-# designation based on PiSCES and previous surveys. 
-# This is essentially leveraging expert opinion from previous NRSA 
-# (i.e. D. Peck et al. and M. Cyterski)
+# designation based on PiSCES and previous surveys-- 
+# This is essentially leveraging expert opinion (i.e. D. Peck et al. and M. Cyterski)
 
 # A manual check of unmatched taxa could indicate the the reported taxa is out 
 # the species range conflicting assignments. 
@@ -92,14 +91,11 @@ nars_taxa_list <- nars_taxa_list %>%
 ########
 fish_col <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
                       sep = "\t") %>%
-  filter(LINE_CORRECTED != "DELETE") %>%
+  #filter(LINE_CORRECTED != "DELETE") %>%
   select(-TAXA_ID)%>%
   distinct()%>%
   mutate(FINAL_NAME = NAME_COM_CORRECTED)
 
-#this can be removed later-- updated n name reconciliation table
-fish_col[fish_col$NAME_COM_CORRECTED=="LARGEMOUTH BASS (YOY)","NAME_COM_CORRECTED"]<-"LARGEMOUTH BASS"
-fish_col[fish_col$NAME_COM_CORRECTED=="CHINOOK SALMON (YOY)","NAME_COM_CORRECTED"]<-"CHINOOK SALMON"
 
 # All taxa should have a TAXA_ID before reaching this step in the future
 if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME))
@@ -110,8 +106,8 @@ fish_col <- merge(fish_col,
                   by.y = "FINAL_NAME")
 
 fish_col <- merge(fish_col, site.info[,c("UID","HUC8")], by="UID", all.x=T)
-
 ####################################################
+dim(fish_col)
 
 # lookup tables for nativeness assignments. 
 # Files obtained from USGS NAS program -- email saved Matt from NAS.
@@ -218,26 +214,22 @@ Nativeness_Master_Table <- merge(Nativeness_Master_Table,
 Nativeness_Master_Table[is.na(Nativeness_Master_Table$TAXA_ID), "TAXA_ID"] <- ""
 Nativeness_Master_Table<-Nativeness_Master_Table[Nativeness_Master_Table$NON_NATIVE!="E",]
 ###############################################
-head(Nativeness_Master_Table)
-anyDuplicated(Nativeness_Master_Table[,c("HUC8","common_name")])
-nrow(Nativeness_Master_Table)
+write.csv(Nativeness_Master_Table, "NRSA_Nativeness_Master_Table.csv", row.names = F)
+
 ################################################################################
 # Range Check and Nativeness 
 ################################################################################
 
-
-########
-# Create a native/non-native species list for each HUC8 by combining Nature Serve, 
-# NAS, previous NRSA Surveys and PiSCES.
+#add new taxa to maser
 ###################################################  
 
-#sv<-Nativeness_Master_Table
-Nativeness_Master_Table <- sv
+#if you want to see the new occurrences added during 2324 use
+#Nativeness_Master_Table <- read.csv("NRSA_Nativeness_Table.csv")
+Nativeness_Master_Table <- read.csv("2324NRSA_Nativeness_Table.csv")
 
-# loop to look for occurrences with 6 and 4 digit HUCS. if there are no occurrences, 
-# could potential indicate that the specimen was outside the range. Updates new 
-# taxa in nativeness taxa table... I'd like to change that... 
-
+# look for occurrences with 6 and 4 digit HUCS. if there are no occurrences, 
+# could potential indicate that the specimen was outside the range. 
+#######
 # initialize loop
 MissingTaxa_HUC <- merge(fish_col, 
                          Nativeness_Master_Table, 
@@ -255,7 +247,7 @@ MissingTaxa_HUC[is.na(MissingTaxa_HUC$HUC8), "HUC8"] <- ""
 
 MissingTaxa_HUC <- MissingTaxa_HUC %>%
   filter(is.na(NON_NATIVE) & HUC8 != "")%>%
-  select(c("HUC8","TAXA_ID", "common_name", "scientific_name"))
+  select(c("HUC8", "TAXA_ID"))
 
 # Iterator to select the huc level
 n = 7
@@ -305,8 +297,11 @@ while(n >= 5){
  
   n = n-2
 }
+#########################################
 
 # resolve potential range flags
+if(nrow(add2master)==0){print("no new taxa to add")
+  } else {print("new taxa, proceed with writing new master table")}
 ########
 tmp <- rbind(add2master[,-6], Nativeness_Master_Table)
 
@@ -330,9 +325,8 @@ CHECK_new$COMMENTS <- ""
 CHECK_new$NAME_CORRECTION <- ""
 
 
-
 # DONT NOT overwrite!!! add date to file after written to ensure no problems
-#write.csv(CHECK_new, "checks/NONNATIVE_CHECK_NEW_FILE.csv")
+#write.csv(CHECK_new, "checks/NONNATIVE_CHECK_NEW_FILE_XXXXXXX.csv")
 
 # It is sometimes to map the location of the HUC8 to identify major river
 # to decipher whether it is native
@@ -342,11 +336,9 @@ tmap_mode("view")
 p <- WBD[WBD$huc8 == "10270101", "name"]
 tm_shape(p)+
   tm_borders()
-
+###########################################
 
 newTaxa <- read.csv("checks/NONNATIVE_CHECK_NEW_FILE_04042025.csv")
-names(newTaxa)
-nrow(newTaxa[newTaxa[,"NAME_CORRECTION"]!="",])
 #correct lines that had range violation
 ########
 updates <- newTaxa[newTaxa$NAME_CORRECTION != "",
@@ -371,14 +363,24 @@ if(anyDuplicated(searched_taxa[,c("HUC8","TAXA_ID")])){
 ###################################
 add2master <- rbind(add2master, searched_taxa)
 
-table(add2master$COMMENTS)
-length(grep("HUC6",add2master$COMMENTS))
+#add new taxa to Nativeness Master Table
+##############
 NRSA_Nativeness_Table <- rbind(Nativeness_Master_Table, add2master[,-6])%>%
   filter(TAXA_ID != "") %>%
   select(c("HUC8", "source", "NON_NATIVE", "TAXA_ID"))
+#########################################
+#write.csv(NRSA_Nativeness_Table, "2324NRSA_Nativeness_Table.csv")
 
-write.csv(NRSA_Nativeness_Table, "NRSA_Nativeness_Table.csv")
+#add native/non-native to fish collection file
+finished <- merge(fish_col, 
+                  NRSA_Nativeness_Table[, c("HUC8", "TAXA_ID", "NON_NATIVE")], 
+                  by = c("HUC8", "TAXA_ID"), all.x = T)
 
+#write.csv(finished, "2324NRSA_Fish_collection.csv")
+
+
+# Fun map of nativeness database
+###########
 library(tmap)
 WBD <- st_read(dsn = "Supporting Information/WBD_National_GDB/WBD_National_GDB.gdb", layer = "WBDHU8")
 head(NRSA_Nativeness_Table)
@@ -403,23 +405,6 @@ T1<-tm_shape(p)+
   tm_polygons("NNP")+
   tm_shape(p2)+
   tm_borders(col = "green")
-tmap_save(T1,"NativenessExample.jpeg", width = 12, height = 10, units = "in")
+##########################################
+#tmap_save(T1,"NativenessExample.jpeg", width = 12, height = 10, units = "in")
 
-finished <- merge(fish_col, 
-                  NRSA_Nativeness_Table[, c("HUC8", "TAXA_ID", "NON_NATIVE")], 
-                  by = c("HUC8", "TAXA_ID"), all.x = T)
-NRSA2324 <- unique(finished$HUC8)
-substring(NRSA2324,2)
-
-write.csv(finished,"Fish_collection_Corrected.csv")
-
-
-# Use crew identification when no other information exists
-#######
-Nativeness_RangeMaps[is.na(Nativeness_RangeMaps$NON_NATIVE)&
-                       Nativeness_RangeMaps$INTRODUCED=="Y", "HUC_LEVEL"] <- "FIELD"
-Nativeness_RangeMaps[is.na(Nativeness_RangeMaps$Source)&
-                       Nativeness_RangeMaps$INTRODUCED=="Y", "Source"] <- "CREW"
-Nativeness_RangeMaps[is.na(Nativeness_RangeMaps$NON_NATIVE)&
-                       Nativeness_RangeMaps$INTRODUCED=="Y", "NON_NATIVE"] <- "Y"
-###################################################

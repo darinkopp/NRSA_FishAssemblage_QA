@@ -6,11 +6,11 @@ library(sf)
 library(tmap)
 library(stringdist)
 library(readxl)
+library(lubridate)
 
 ################################################################################
 # Data Files 
 ################################################################################
-library(lubridate)
 
 #fish collection file
 #######
@@ -26,13 +26,14 @@ LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_
 # properly record
 fish_col <- read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
                        sep = "\t") %>%
-  filter(LINE_CORRECTED != "DELETE")%>%
+  #filter(LINE_CORRECTED != "DELETE")%>%
   mutate(YEAR = substring(DATE_COL, nchar(DATE_COL)-3, nchar(DATE_COL)))
 
 # Unique index to reference fish_col 
 if(anyDuplicated(fish_col[,c("SITE_ID","VISIT_NO","YEAR","LINE")])){
   stop("theses shouldn't be duplicated")
 }
+#########################################
 
 # Identify records in LAB_QA that do not have a matching record in the fish 
 # collection table. These will need to be investigated.
@@ -77,7 +78,7 @@ for (i in sid$SITE_ID){
 # Copy the names of the list elements into the 3 categories below
 tagID
 
-#Field crews used lines as tags
+# Field crews used lines as tags
 #########
 for (i in c("NRS23_GA_10041","NRS23_KS_10026","NRS23_KS_10088",
             "NRS23_MA_10016","NRS23_MN_HP002","NRS23_MO_10056",
@@ -113,7 +114,7 @@ for (i in c("NRS23_AR_10101","NRS23_ID_10192","NRS23_MO_10016",
              "TAG"] <- q$TAG.y 
   }
 }
-#################################
+#########################
 
 #?
 #"NRS23_MT_10005"
@@ -125,7 +126,7 @@ a[a$SITE_ID=="NRS23_MT_10005", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
 fish_col[fish_col$SITE_ID == "NRS23_MT_10005" &
            !is.na(fish_col$LINE)&fish_col$VISIT_NO==1&
            fish_col$LINE %in% c(2), c("TAG")] <- c(1)
-###################################################
+########################################
 #"NRS23_MT_10032"
 ##############
 fish_col[fish_col$SITE_ID=="NRS23_MT_10032",
@@ -135,7 +136,7 @@ a[a$SITE_ID=="NRS23_MT_10032", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
 fish_col[fish_col$SITE_ID == "NRS23_MT_10032" &
            !is.na(fish_col$LINE) & fish_col$VISIT_NO==1&
            fish_col$LINE %in% c(4), c("TAG")] <- c(8)
-#################################################
+########################################
 #"NRS23_MT_10169"
 #############
 fish_col[fish_col$SITE_ID=="NRS23_MT_10169",
@@ -165,7 +166,7 @@ a[a$SITE_ID=="NRS23_MT_10013", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
 fish_col[fish_col$SITE_ID == "NRS23_MT_10013" &
            !is.na(fish_col$LINE) & fish_col$VISIT_NO==1&
            fish_col$LINE %in% c(1), c("TAG")] <- c(41)
-##########################################
+########################################
 #"NRS23_NV_10019"
 ############
 fish_col[fish_col$SITE_ID=="NRS23_NV_10019",
@@ -175,7 +176,7 @@ a[a$SITE_ID=="NRS23_NV_10019", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
 fish_col[fish_col$SITE_ID == "NRS23_NV_10019" &
            !is.na(fish_col$LINE) & fish_col$VISIT_NO==1&
            fish_col$LINE %in% c(5), c("TAG")] <- c(1)
-################################################
+########################################
 #"NRS23_CO_10094"
 #############
 fish_col[fish_col$SITE_ID=="NRS23_CO_10094",
@@ -195,14 +196,14 @@ fish_col[fish_col$SITE_ID=="NRS23_MO_10050",
            "VOUCH_UNK","VOUCH_QA", "NAME_COM_CORRECTED", "DATE_COL")]
 a[a$SITE_ID=="NRS23_MO_10050", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
 
-#####################################
+########################################
 #NRS23_MO_10056
 #############
 fish_col[fish_col$SITE_ID=="NRS23_MO_10056",
          c("SITE_ID", "VISIT_NO", "TAG","LINE","VOUCH_PHOTO", 
            "VOUCH_UNK","VOUCH_QA", "NAME_COM_CORRECTED", "DATE_COL")]
 a[a$SITE_ID=="NRS23_MO_10056", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
-###################################
+########################################
 #NRS23_AR_10101
 ########
 fish_col[fish_col$SITE_ID=="NRS23_AR_10101",
@@ -212,14 +213,14 @@ a[a$SITE_ID=="NRS23_AR_10101", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
 fish_col[fish_col$SITE_ID == "NRS23_AR_10101" &
            !is.na(fish_col$LINE) & fish_col$VISIT_NO==1&
            fish_col$LINE %in% c(25), c("TAG")] <- c(25)
-################################################
+########################################
 #NRS23_KS_10026
 #########
 fish_col[fish_col$SITE_ID=="NRS23_KS_10026",
          c("SITE_ID", "VISIT_NO", "TAG","LINE","VOUCH_PHOTO", 
            "VOUCH_UNK","VOUCH_QA", "NAME_COM_CORRECTED", "DATE_COL")]
 a[a$SITE_ID=="NRS23_KS_10026", c("TAG","LINE","VISIT_NO","COMMON.NAME"),]
-#########################################
+########################################
 
 # Check results updates
 #####
@@ -234,81 +235,124 @@ sid <- unique(a[is.na(a$NAME_COM_CORRECTED),c("SITE_ID", "VISIT_NO", "YEAR")])
 print(sid)
 #####################
 
-
+# write comparison table
+#####
 LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_26_v2.xlsx")%>%
   data.frame() %>%
   mutate(TAG=as.numeric(TAG.NUMBER))%>%
   mutate(DATE_COL = format(as.Date(as.character(DATE.COLLECTED), 
                                    "%Y-%m-%d"), "%m/%d/%Y"))%>%
-  mutate(YEAR=substring(DATE_COL,nchar(DATE_COL)-3,nchar(DATE_COL)))
+  mutate(YEAR=substring(DATE_COL, nchar(DATE_COL)-3, nchar(DATE_COL)))
+
+#update common names to unknown when Lab ID was not possible, 
+#See Comments provided by taxonomist
+LAB_QA[is.na(LAB_QA$COMMON.NAME),"COMMON.NAME"] <- 
+  paste("UNKNOWN",LAB_QA[is.na(LAB_QA$COMMON.NAME),"SCIENTIFIC.NAME"])
 
 # correct line/tag numbers in fish_col
 FINAL_QC_Eval <- merge(fish_col[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG", 
                                    "LINE","NAME_COM_CORRECTED",
-                                   "VOUCH_PHOTO", "VOUCH_UNK", 
+                                   "VOUCH_PHOTO", "VOUCH_UNK","CREW", 
                                    "VOUCH_QA", "VOUCH_NUM")], LAB_QA,  
            by.y = c("SITE.ID", "VISIT.NUMBER", "YEAR", "TAG"), 
            by.x = c("SITE_ID", "VISIT_NO", "YEAR", "TAG"),
            all.y = T)
 
 FINAL_QC_Eval$QC_Agree <- toupper(FINAL_QC_Eval$COMMON.NAME)==FINAL_QC_Eval$NAME_COM_CORRECTED
-mean(FINAL_QC_Eval$QC_Agree,na.rm = T)
+#the taxa from Missouri were not recoded in the field
+FINAL_QC_Eval[is.na(FINAL_QC_Eval$QC_Agree),"QC_Agree"]<-FALSE
 
-view(FINAL_QC_Eval)
-sum(duplicated(FINAL_QC_Eval[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]))
-write.csv(FINAL_QC_Eval, "QC_Check_DK_4092025.csv")
+#############################################
+#write.csv(FINAL_QC_Eval, "QC_Check_DK_4092025.csv")
 
-# check for agreements.
-#############
-# Tags are sometimes unreliable,
-# so compare species lists. 
-# What proportion did field taxonomist get correct? 
-nrow(LAB_QA)
-id <- unique(LAB_QA[,c("SITE.ID", "VISIT.NUMBER")])
-out <- setNames(data.frame(matrix(NA, nrow(id),4)), 
-                c("SITE_ID","Vouch.Complete", "Fieldtaxonomist", "Agreement"))
-for (i in 1:nrow(id)){
-  # i <- 149
-  out$SITE_ID[i] <- id$SITE.ID[i]
-  LABID <- toupper(LAB_QA[LAB_QA$SITE.ID==id$SITE.ID[i] & 
-                            LAB_QA$VISIT.NUMBER==id$VISIT.NUMBER[i],
-                          "COMMON.NAME"])
-  
-  FIELDID <- unique(fish_col[fish_col$SITE_ID == id$SITE.ID[i]&
-                               fish_col$VISIT_NO==id$VISIT.NUMBER[i],
-                             "NAME_COM_CORRECTED"])
-  
-  taxonomist <- unique(fish_col[fish_col$SITE_ID == id$SITE.ID[i]&
-                                  fish_col$VISIT_NO==id$VISIT.NUMBER[i],
-                                "FISH_TAXONOMIST"])
-  
-  # one taxonomist entered abbreviated name 
-  out$Fieldtaxonomist[i] <- taxonomist[1]
-  
-  if(length(FIELDID)>=length(LABID)){
-    out$Vouch.Complete[i]<-"Y"
-  } else {
-    out$Vouch.Complete[i]<-"N"
-  }
-  
-  Fieldtaxa = length(FIELDID)
-  Labtaxa = length(LABID)
-  out$Agreement[i] <- sum(FIELDID %in% LABID)/length(unique(c(LABID,FIELDID)))
-}
+#Quick analysis of field crew proficiency 
+########
+#total agreement
+mean(FINAL_QC_Eval$QC_Agree, na.rm = T)
 
-mean(out$Vouch.Complete=="Y")
 
-a <- out%>%
-  filter (Vouch.Complete=="Y")
+crewResults <- FINAL_QC_Eval %>%
+  group_by(CREW) %>%
+  summarise(a = mean(QC_Agree,na.rm=T))
 
-median(a$Agreement)
 
-P1 <- ggplot(a, aes(x = Agreement))+
+p1 <- ggplot(crewResults[complete.cases(crewResults),])+
+  geom_dotplot(aes(x = a, y = CREW), dotsize = 0.5,
+               stackdir = "center")+
+  theme_bw()+ 
+  geom_vline(aes(xintercept=median(a)), 
+             lty = 2, lwd = 1.25, col = "red")+
+  labs(x = "Mean Agreement (%)", 
+       title = "Average Agreement for Crew")
+
+
+#average agreement for sites 
+a <- FINAL_QC_Eval %>%
+  group_by(SITE_ID) %>%
+  summarise(a = mean(QC_Agree, na.rm = T))
+
+p2 <- ggplot(a, aes(x = a))+
   geom_histogram(binwidth = 0.125)+
   theme_bw()+
-  geom_vline(aes(xintercept=median(Agreement)), 
-             lwd = 2)
-##############################################
-ggsave("FieldLabAgree.jpeg", P1, height = 5, width = 5)
+  geom_vline(aes(xintercept=median(a)), 
+             lty = 2, lwd = 1.25, col = "red")+
+  labs(x = "Mean Agreement(%)",y = "SITES (#)",
+       title = "Mean agreement for sites")
 
+##############################################
+print(p1)
+print(p2)
+#ggsave("FieldLabAgree.jpeg", p2, height = 5, width = 5)
+
+
+#duplicate records are new taxa that need to be added to fish_col file
+#counts are proportionally allocated
+########
+New_Taxa_Rows <- FINAL_QC_Eval[duplicated(FINAL_QC_Eval[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]),
+                          c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]
+New_Taxa <- unique(New_Taxa)
+NewRecords <- data.frame()
+for (i in 1:nrow(New_Taxa)){
+  #i<-1
+  new_taxa <- FINAL_QC_Eval[FINAL_QC_Eval$SITE_ID==New_Taxa$SITE_ID[i]& 
+                  FINAL_QC_Eval$TAG==New_Taxa$TAG[i] & 
+                  FINAL_QC_Eval$YEAR==New_Taxa$YEAR[i],
+                  c("LINE","COMMON.NAME","NUMBER.OF.INDIVIDUALS")]%>%
+    mutate(prop = NUMBER.OF.INDIVIDUALS/sum(NUMBER.OF.INDIVIDUALS))
+  
+  tmp <- fish_col[fish_col$SITE_ID==New_Taxa$SITE_ID[i] & 
+                    !is.na(fish_col$TAG) & 
+                    fish_col$TAG==New_Taxa$TAG[i] & 
+                    fish_col$YEAR==New_Taxa$YEAR[i],]
+    
+  tmp <- tmp[rep(1,nrow(new_taxa)),]
+  #update names
+  ind <- tmp$NAME_COM_CORRECTED != toupper(new_taxa$COMMON.NAME)
+  ind.2 <- toupper(new_taxa$COMMON.NAME) != tmp$NAME_COM_CORRECTED
+  
+  tmp[ind,c("NAME_COM_CORRECTED")] <- toupper(new_taxa$COMMON.NAME)[ind.2]
+  
+  tmp$LINE <- paste0(tmp$LINE, ".", seq(1:nrow(tmp)))
+  
+  vals <- new_taxa$prop[order(new_taxa$COMMON.NAME)]*
+    tmp[order(tmp$NAME_COM_CORRECTED),
+        c("COUNT_6", "COUNT_12", "COUNT_18","COUNT_19","MORT_CT")]
+  
+  tmp[order(tmp$NAME_COM_CORRECTED),
+      c("COUNT_6", "COUNT_12",
+        "COUNT_18","COUNT_19",
+        "MORT_CT")] <- vals
+  NewRecords <- rbind(NewRecords,tmp)
+}
+
+dim(fish_col)
+rows2rm <- grep("\\.",rownames(NewRecords), value = T, invert = T)
+# remove record from fish_collection table
+fish_col <- fish_col[!rownames(fish_col) %in% rows2rm,]
+fish_col <- rbind(fish_col,NewRecords)
+###################################
+#additional records added
+dim(fish_col)
+
+#write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
 
