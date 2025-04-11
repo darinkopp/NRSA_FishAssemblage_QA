@@ -15,7 +15,7 @@ efficiently identifies and corrects inconsistencies or errors in the
 data (Figure 1).
 
 ![Schematic of quality assurance procedure for fish
-assemblages](QA%20Schematic.png) Name Reconciliation: The name
+assemblages](2324_QA_Schematic.png) Name Reconciliation: The name
 reconciliation module harmonizes field identifications with the NRSA
 taxa list. Any identifications that were unknown or not easily
 reconciled were sent to the field crew for comment. If the field crew
