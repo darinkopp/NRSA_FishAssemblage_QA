@@ -904,7 +904,6 @@ if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME)){
 # an assignment then leave blank
 #######################################
 
-
 # check to confirm that all taxa on fish collection file have autecology information
 #########
 # read in new taxa list if update were made
@@ -1008,8 +1007,9 @@ fish_col[fish_col$LINE_CORRECTED == "N", "LINE_CORRECTED"] <- ""
 fish_col[fish_col$LINE_CORRECTED == "Y", "LINE_CORRECTED"] <- "DELETE"
 ####################################
 
-all(nrow(fish_col) == nrow(fish_col_original))
 
+# names that needed to be corrected that were identified downstream in the analysis
+#####
 # found comment mentioning that this was Hybrid, BARTRAMS BASS
 fish_col[fish_col$SITE_ID == "NRS23_SC_10074" & 
            fish_col$LINE == 20, "NAME_COM_CORRECTED"] <- "ALABAMA BASS X BARTRAMS BASS"
@@ -1020,12 +1020,13 @@ fish_col[fish_col$NAME_COM_CORRECTED=="CHINOOK SALMON (YOY)","NAME_COM_CORRECTED
 
 # 99 visits should have been deleted during the 2023
 fish_col[fish_col$VISIT_NO=="99","LINE_CORRECTED"]<-"DELETE"
+#######################################
 
+all(nrow(fish_col) == nrow(fish_col_original))
 
 # write corrected file
 #write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
 
 # view the lines that will be removed from the dataset
 view(fish_col[fish_col$LINE_CORRECTED == "DELETE",])
-view(fish_col[fish_col$SITE_ID == "NRS23_GA_10091",])
-view(fish_col[fish_col$SITE_ID == "NRS23_WY_10156", ])
+View(fish_col)
