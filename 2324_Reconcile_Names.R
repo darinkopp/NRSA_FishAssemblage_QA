@@ -11,7 +11,7 @@ allTheNRSA <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/allTheNRSA/data/
 allTheNRSA_Fishcts <- paste0(allTheNRSA, "NRSA0809_fishCts_alltheNRSA.tab") %>%
   read.table(sep = "\t", header = T)
 
-SI<-paste0(allTheNRSA, "NRSA0809-1819_siteinfo.tab") %>%
+SI <- paste0(allTheNRSA, "NRSA0809-1819_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
 
 #######################
@@ -72,7 +72,7 @@ fish_col <- merge(fish_col,
 #######################
 
 # Function to update Fish Collection
-#######
+######
 # Parameters:
 # FIELD_Name = NAME_COM (name given in field)
 # NAME_COM_CORRECTED = the reconciled name (typically 1819 NAME_COM_CORRECTED)
@@ -91,7 +91,7 @@ updateRecord <- function(df, FIELD_Name, NAME_COM_CORRECTED, STATE = "ALL"){
   }
   return(df)
 }
-######################################
+#######################
 
 ################################################################################
 # reconcile names
@@ -953,9 +953,9 @@ View(Check_Taxa)
 ############
 LineTotal <- apply(fish_col[,c("COUNT_6", "COUNT_12", "COUNT_18", "COUNT_19")], 
                    1, sum, na.rm = T)
-fish_col$MORT_CT_CORRECTED <- ifelse(fish_col$MORT_CT > LineTotal & 
+fish_col$MORT_CT <- ifelse(fish_col$MORT_CT > LineTotal & 
                                        !is.na(fish_col$MORT_CT), 
-                                         "DELETE", " ")
+                           NA, " ")
 ####################################
 
 # check counts: Identify lines without counts and add to delete from dataset. 

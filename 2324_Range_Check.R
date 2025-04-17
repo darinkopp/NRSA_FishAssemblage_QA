@@ -13,8 +13,10 @@
 
 # A manual check of unmatched taxa could indicate the the reported taxa is out 
 # the species range conflicting assignments. 
+rm(list=ls())
 library(tmap)
-
+library(sf)
+library(nhdplusTools)
 ################################################################################
 # Range Check and Nativeness 
 ################################################################################
@@ -41,7 +43,7 @@ pt <- st_as_sf(HUCs,
                coords = c("LON_DD83", "LAT_DD83"), 
                crs = 4269)
 
-# query HUC12 from nhdplustools
+# query HUC8 from nhdplustools
 HUCs$HUC8 <- NA
 for(i in 1:nrow(pt)){
   #i<-1
@@ -51,12 +53,17 @@ for(i in 1:nrow(pt)){
 }
 HUCs$HUC8 <- unlist(HUCs$HUC8)
 
+HUCs <- read.csv("2324_NRSA_QA_Results/2324NRSA_Fish_collection.csv")%>%
+  select(c(UID,HUC8))%>%
+  distinct()%>%
+  mutate(HUC8=substring(HUC8,2))
+
+
 # add missing HUC8 to the site.info 
 for (i in HUCs$UID){
   #i<-2022239
   site.info[site.info$UID==i, "HUC8"] <- paste0("H", HUCs[HUCs$UID == i, "HUC8"])
 }
-
 #####################################################
 
 # NRSA taxa list -- most recent. This is needed to crosswalk 
@@ -100,11 +107,12 @@ fish_col <- merge(fish_col, site.info[,c("UID","HUC8")], by="UID", all.x=T)
 ####################################################
 dim(fish_col)
 
-# NRSA_NATIVENESS doesnt contain new occurrences added during 2324 use
+# NRSA Nativeness Master Table 
+#######
+#NRSA_NATIVENESS doesnt contain new occurrences added during 2324 use
 #Nativeness_Master_Table <- read.csv("NRSA_Nativeness_Table.csv")
 Nativeness_Master_Table <- read.csv("2324_NRSA_QA_Results/2324NRSA_Nativeness_Table.csv")%>%
   select(-X)
-# Compare taxa to master table,
 ###################################################  
 
 
@@ -183,8 +191,8 @@ while(n >= 5){
  
   n = n-2
 }
-
-tmp <- rbind(add2master[,-6], Nativeness_Master_Table)
+names(Nativeness_Master_Table)
+tmp <- rbind(add2master[,-c(4,6,7)], Nativeness_Master_Table)
 
 b <- merge(fish_col, tmp, 
            by = c("HUC8","TAXA_ID"), 
@@ -207,27 +215,28 @@ if(sum(b$HUC8!="" & !is.na(b$HUC8) & is.na(b$NON_NATIVE))){
 # corrected species name
 #########
 CHECK_new <- b[b$HUC8!="" & !is.na(b$HUC8) & is.na(b$NON_NATIVE),
-               c("HUC8","TAXA_ID", "UID", "NAME_COM_CORRECTED", 
-                 "SITE_ID", "NON_NATIVE", "source")]
+               c("HUC8","TAXA_ID", "UID", "NAME_COM", 
+                 "NAME_COM_CORRECTED", "SITE_ID", "NON_NATIVE", 
+                 "source")]
 
 CHECK_new$COMMENTS <- ""
 CHECK_new$NAME_CORRECTION <- ""
 
 
 # DONT NOT overwrite!!! add date to file after written to ensure no problems
-#write.csv(CHECK_new, "checks/NONNATIVE_CHECK_NEW_FILE_XXXXXXX.csv")
+#write.csv(CHECK_new, "checks/NONNATIVE_CHECK_NEW_FILE_04162025b.csv")
 
 # It is sometimes to map the location of the HUC8 to identify major river
 # to decipher whether it is native
 
-# WBD <- st_read(dsn = "Supporting Information/WBD_National_GDB/WBD_National_GDB.gdb", layer = "WBDHU8")
-# tmap_mode("view")
-# p <- WBD[WBD$huc8 == "04040001", "name"]
-# tm_shape(p)+
-#   tm_borders()
+WBD <- st_read(dsn = "Supporting Information/WBD_National_GDB/WBD_National_GDB.gdb", layer = "WBDHU8")
+tmap_mode("view")
+p <- WBD[WBD$huc8 == "18020122", "name"]
+tm_shape(p)+
+  tm_borders()
 ###########################################
 
-newTaxa <- read.csv("checks/NONNATIVE_CHECK_NEW_FILE_04152025.csv")
+newTaxa <- read.csv("checks/NONNATIVE_CHECK_NEW_FILE_04162025b.csv")
 #correct lines that had range violation, if any, and append new taxa to table
 ########
 updates <- newTaxa[!is.na(newTaxa$NAME_CORRECTION),
@@ -269,6 +278,7 @@ NRSA_Nativeness_Table <- rbind(Nativeness_Master_Table,
 #write.csv(NRSA_Nativeness_Table, "2324NRSA_Nativeness_Table.csv")
 
 #add native/non-native to fish collection file
+fish_col$FINAL_NAME <- fish_col$NAME_COM_CORRECTED
 finished <- merge(fish_col, 
                   NRSA_Nativeness_Table[, c("HUC8", "TAXA_ID", "NON_NATIVE")], 
                   by = c("HUC8", "TAXA_ID"), all.x = T)

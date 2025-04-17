@@ -231,7 +231,7 @@ sid <- unique(a[is.na(a$NAME_COM_CORRECTED),c("SITE_ID", "VISIT_NO", "YEAR")])
 print(sid)
 #####################
 
-fish_col$TAG_CORRECTED <- fish_col$TAG 
+#fish_col$TAG_CORRECTED <- fish_col$TAG 
 
 # write comparison between field and QC identifications
 #####
@@ -245,7 +245,48 @@ LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_
 # update common names to unknown when Lab ID was not possible, 
 # See Comments provided by taxonomist
 LAB_QA[is.na(LAB_QA$COMMON.NAME),"COMMON.NAME"] <- 
-  paste("UNKNOWN",LAB_QA[is.na(LAB_QA$COMMON.NAME),"SCIENTIFIC.NAME"])
+  paste("UNKNOWN", LAB_QA[is.na(LAB_QA$COMMON.NAME), "SCIENTIFIC.NAME"])
+
+# this should be the most recent taxa list
+dir_NRSA_2324 <- "O:/PRIV/CPHEA/PESD/COR/CORFILES/IM-TH007/data/im/nrsa2324"
+nars_taxa_list <- dir_NRSA_2324 %>%
+  paste0("/data/tabfiles/nrsa2324_fish_taxa.tab") %>%
+  read.table(sep = "\t", header = T)
+
+# need to confirm that the names match the TaxaList
+NewFish <- LAB_QA %>%
+  filter(!toupper(COMMON.NAME) %in% nars_taxa_list$FINAL_NAME) %>%
+  select(COMMON.NAME) %>%
+  distinct()%>%
+  mutate(COMMON.NAME=toupper(COMMON.NAME))
+
+
+#NRSA taxa list as vector
+NARS_NAME_COM_CORRECTED <- nars_taxa_list$FINAL_NAME
+
+Fuzzy_result <- sapply(NewFish$COMMON.NAME, 
+                       function(x){stringdist(x, 
+                                              NARS_NAME_COM_CORRECTED, 
+                                              method = 'cosine', 
+                                              q = 1)})
+rownames(Fuzzy_result) <- NARS_NAME_COM_CORRECTED
+#selects the 15 NRSA taxa with closest match
+Fuzzy_result <- apply(Fuzzy_result, 2, 
+                      function(x) list(names(x)[order(x)[1:15]]))
+
+Fuzzy_result 
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "TESSELATED DARTER", "COMMON.NAME"] <- "TESSELLATED DARTER"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "CUTTHROAT TROUT X RAINBOW TROUT", "COMMON.NAME"] <- "CUTBOW"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "FATHEAD MINNNOW", "COMMON.NAME"] <- "FATHEAD MINNOW"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "WARMOUTH X BLUEGILL", "COMMON.NAME"] <- "BLUEGILL X WARMOUTH"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "SKIPKJACK HERRING", "COMMON.NAME"] <- "SKIPJACK HERRING"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "SACREMENTO SUCKER", "COMMON.NAME"] <- "SACRAMENTO SUCKER"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "SACREMENTO PIKEMINNOW", "COMMON.NAME"] <- "SACRAMENTO PIKEMINNOW"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "RED X BLACKTAIL SHINER", "COMMON.NAME"] <- "BLACKTAIL SHINER X RED SHINER"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "PUMPKINSEED X BLUEGILL", "COMMON.NAME"] <- "BLUEGILL X PUMPKINSEED"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "PEARL DACE", "COMMON.NAME"] <- "NORTHERN PEARL DACE"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "UNKNOWN PETROMYZONTIDAE", "COMMON.NAME"] <- "UNKNOWN LAMPREY"
+LAB_QA[toupper(LAB_QA$COMMON.NAME) == "REDSPOTTED X SPOTTED SUNFISH", "COMMON.NAME"] <- "REDSPOTTED SUNFISH X SPOTTED SUNFISH"
 
 # correct line/tag numbers in fish_col
 FINAL_QC_Eval <- merge(fish_col[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG", 
@@ -259,9 +300,97 @@ FINAL_QC_Eval <- merge(fish_col[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG",
 FINAL_QC_Eval$QC_Agree <- toupper(FINAL_QC_Eval$COMMON.NAME)==FINAL_QC_Eval$NAME_COM_CORRECTED
 #the taxa from Missouri were not recoded in the field
 FINAL_QC_Eval[is.na(FINAL_QC_Eval$QC_Agree),"QC_Agree"]<-FALSE
-
 #############################################
-#write.csv(FINAL_QC_Eval, "QC_Check_DK_4092025.csv")
+
+# check names that are different, Confirm that the mismatches are not due to 
+# wrong labels. It is very easy for field crews to write wrong label. In general,
+# give the preference to QC taxonomist - They double checked disagreements. 
+# did not in general did not adjust update hybrids, nor specimens that were 
+# in the greatest shape. Also, check QC recommendation Name against ranges. 
+# Sometimes the new neame is beyond the range and was not updated 
+# DO NOT OVERWRITE. 
+#write.csv(FINAL_QC_Eval, "QC Taxonomist Files/QC_Check_DK_XXXXXXXX.csv")
+
+
+# duplicate records are new taxa that need to be added to fish_col file
+# counts are proportionally allocated
+########
+New_Taxa <- FINAL_QC_Eval[duplicated(FINAL_QC_Eval[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]),
+                          c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]
+New_Taxa <- unique(New_Taxa)
+NewRecords <- data.frame()
+for (i in 1:nrow(New_Taxa)){
+  #i <- 1
+  new_taxa <- FINAL_QC_Eval[FINAL_QC_Eval$SITE_ID==New_Taxa$SITE_ID[i]& 
+                  FINAL_QC_Eval$TAG==New_Taxa$TAG[i] & 
+                  FINAL_QC_Eval$YEAR==New_Taxa$YEAR[i],
+                  c("LINE","COMMON.NAME","NUMBER.OF.INDIVIDUALS")]%>%
+    mutate(prop = NUMBER.OF.INDIVIDUALS/sum(NUMBER.OF.INDIVIDUALS))
+  
+  tmp <- fish_col[fish_col$SITE_ID==New_Taxa$SITE_ID[i] & 
+                    !is.na(fish_col$TAG) & 
+                    fish_col$TAG==New_Taxa$TAG[i] & 
+                    fish_col$YEAR==New_Taxa$YEAR[i],]
+    
+  tmp <- tmp[rep(1,nrow(new_taxa)),]
+  #update names
+  ind <- tmp$NAME_COM_CORRECTED != toupper(new_taxa$COMMON.NAME)
+  ind.2 <- toupper(new_taxa$COMMON.NAME) != tmp$NAME_COM_CORRECTED
+  
+  tmp[ind,c("NAME_COM_CORRECTED")] <- toupper(new_taxa$COMMON.NAME)[ind.2]
+  
+  tmp$LINE <- paste0(tmp$LINE, ".", seq(1:nrow(tmp)))
+  
+  vals <- round(new_taxa$prop[order(new_taxa$COMMON.NAME)]*
+    tmp[order(tmp$NAME_COM_CORRECTED),
+        c("COUNT_6", "COUNT_12", "COUNT_18","COUNT_19")])
+  
+  #avoids adding in zero taxa from rounding
+  ind.zero <- apply(vals,1,function(x) sum(x,na.rm=T)>0)
+  
+  print(ind.zero)
+  
+  vals <- vals[ind.zero,]
+  
+  tmp[order(tmp$NAME_COM_CORRECTED),
+      c("COUNT_6", "COUNT_12",
+        "COUNT_18","COUNT_19")] <- vals
+  NewRecords <- rbind(NewRecords,tmp)
+}
+
+#check total counts for new taxa
+apply(NewRecords[,c("COUNT_6", "COUNT_12", "COUNT_18","COUNT_19")],1,sum, na.rm=T)
+
+# inital rows
+init<-nrow(fish_col)
+rows2rm <- grep("\\.",rownames(NewRecords), value = T, invert = T)
+
+# remove record from fish_collection table
+fish_col <- fish_col[!rownames(fish_col) %in% rows2rm,]
+fish_col <- rbind(fish_col,NewRecords)
+###################################
+#additional records added
+dim(fish_col)
+
+# add line corrections
+fish_col[grep("\\.",fish_col$LINE),"LINE_CORRECTED"] <- fish_col[grep("\\.",fish_col$LINE),"LINE"]
+
+# update disagreements to side with QC taxonomist.  
+#######
+QC_Eval <- read.csv("QC Taxonomist Files/QC_Check_DK_4092025.csv")
+correctNames <- QC_Eval[!QC_Eval$QC_Agree&QC_Eval$Correct!="N",]
+for (q in 1:nrow(correctNames)){
+  #q<-1
+  fish_col[fish_col$SITE_ID == correctNames$SITE_ID[q]&
+  fish_col$VISIT_NO==correctNames$VISIT_NO[q]&
+  fish_col$YEAR==correctNames$YEAR[q]&
+  fish_col$LINE==correctNames$LINE[q]&
+  fish_col$TAG==correctNames$TAG[q], "NAME_COM_CORRECTED"] <- 
+    toupper(correctNames$COMMON.NAME[q])
+}
+###########################
+#write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
+
 
 # Quick analysis of field crew proficiency, does not account for number of 
 # specimens submitted 
@@ -300,60 +429,3 @@ p1 <- ggplot(crewResults[complete.cases(crewResults),])+
 ##############################################
 print(p1)
 #ggsave("FieldLabAgree.jpeg", p1, height = 5, width = 5)
-
-
-# duplicate records are new taxa that need to be added to fish_col file
-# counts are proportionally allocated
-########
-New_Taxa <- FINAL_QC_Eval[duplicated(FINAL_QC_Eval[,c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]),
-                          c("SITE_ID", "VISIT_NO", "YEAR", "TAG")]
-New_Taxa <- unique(New_Taxa)
-NewRecords <- data.frame()
-for (i in 1:nrow(New_Taxa)){
-  #i <- 1
-  new_taxa <- FINAL_QC_Eval[FINAL_QC_Eval$SITE_ID==New_Taxa$SITE_ID[i]& 
-                  FINAL_QC_Eval$TAG==New_Taxa$TAG[i] & 
-                  FINAL_QC_Eval$YEAR==New_Taxa$YEAR[i],
-                  c("LINE","COMMON.NAME","NUMBER.OF.INDIVIDUALS")]%>%
-    mutate(prop = NUMBER.OF.INDIVIDUALS/sum(NUMBER.OF.INDIVIDUALS))
-  
-  tmp <- fish_col[fish_col$SITE_ID==New_Taxa$SITE_ID[i] & 
-                    !is.na(fish_col$TAG) & 
-                    fish_col$TAG==New_Taxa$TAG[i] & 
-                    fish_col$YEAR==New_Taxa$YEAR[i],]
-    
-  tmp <- tmp[rep(1,nrow(new_taxa)),]
-  #update names
-  ind <- tmp$NAME_COM_CORRECTED != toupper(new_taxa$COMMON.NAME)
-  ind.2 <- toupper(new_taxa$COMMON.NAME) != tmp$NAME_COM_CORRECTED
-  
-  tmp[ind,c("NAME_COM_CORRECTED")] <- toupper(new_taxa$COMMON.NAME)[ind.2]
-  
-  tmp$LINE <- paste0(tmp$LINE, ".", seq(1:nrow(tmp)))
-  
-  vals <- new_taxa$prop[order(new_taxa$COMMON.NAME)]*
-    tmp[order(tmp$NAME_COM_CORRECTED),
-        c("COUNT_6", "COUNT_12", "COUNT_18","COUNT_19","MORT_CT")]
-  
-  tmp[order(tmp$NAME_COM_CORRECTED),
-      c("COUNT_6", "COUNT_12",
-        "COUNT_18","COUNT_19",
-        "MORT_CT")] <- vals
-  NewRecords <- rbind(NewRecords,tmp)
-}
-
-dim(fish_col)
-rows2rm <- grep("\\.",rownames(NewRecords), value = T, invert = T)
-# remove record from fish_collection table
-fish_col <- fish_col[!rownames(fish_col) %in% rows2rm,]
-fish_col <- rbind(fish_col,NewRecords)
-###################################
-#additional records added
-dim(fish_col$LINE)
-
-# add line corrections
-fish_col[grep("\\.",fish_col$LINE),"LINE_CORRECTED"] <- fish_col[grep("\\.",fish_col$LINE),"LINE"]
-
-
-#write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
-
