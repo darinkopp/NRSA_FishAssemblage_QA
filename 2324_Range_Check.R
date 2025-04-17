@@ -53,10 +53,10 @@ for(i in 1:nrow(pt)){
 }
 HUCs$HUC8 <- unlist(HUCs$HUC8)
 
-HUCs <- read.csv("2324_NRSA_QA_Results/2324NRSA_Fish_collection.csv")%>%
-  select(c(UID,HUC8))%>%
-  distinct()%>%
-  mutate(HUC8=substring(HUC8,2))
+# HUCs <- read.csv("2324_NRSA_QA_Results/2324NRSA_Fish_collection.csv")%>%
+#   select(c(UID,HUC8))%>%
+#   distinct()%>%
+#   mutate(HUC8=substring(HUC8,2))
 
 
 # add missing HUC8 to the site.info 
