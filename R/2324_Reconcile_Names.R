@@ -874,10 +874,17 @@ fish_col <- fish_col %>%
                STATE = "VA",
                NAME_COM_CORRECTED = "UNKNOWN NOTURUS")
 
+fish_col <- fish_col %>%
+  updateRecord(df = ., 
+               FIELD_Name = "LUXILUS SP.(STRIPED X WHITE)",
+               STATE = "WV",
+               NAME_COM_CORRECTED = "WIPER")
+
 ###################################
 
 # all names should have a record in the autecology file 
 if(!all(fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME)){
+  fish_col[which(!fish_col$NAME_COM_CORRECTED %in% nars_taxa_list$FINAL_NAME),]
   stop("Need to update autecology file")
 } else {
   print("all taxa in autecology file")}
@@ -929,20 +936,20 @@ fish_col$DATE_COL <- as.character(fish_col$DATE_COL)
 # send unknown taxa to field taxonomists for comments, 
 # Any updates received will be made directly in IM and exported to NRSA folde
 ##############
-Check_Taxa <- fish_col %>%
-  filter(NAME_COM_UPR != NAME_COM_CORRECTED |
-           str_detect(NAME_COM_CORRECTED, "UNKNOWN"))%>%
-  filter(NAME_COM_CORRECTED != "NO FISH") %>%
-  #filter(grepl("2024", DATE_COL))%>%
-  select(c("UID", "SITE_ID", "VISIT_NO", "DATE_COL", 
-           "TAG","LINE", "NAME_COM", 
-           "NAME_COM_CORRECTED","VOUCH_NUM", "VOUCH_PHOTO", 
-           "VOUCH_UNK", "VOUCH_QA", "COUNT_6", "COUNT_12", 
-           "COUNT_18", "COUNT_19", "HAS_COUNT", 
-           "CREW", "FLAG", "TAXA_ID", 
-           "COMMENT"))
-# Vise list
-View(Check_Taxa)
+# Check_Taxa <- fish_col %>%
+#   filter(NAME_COM_UPR != NAME_COM_CORRECTED |
+#            str_detect(NAME_COM_CORRECTED, "UNKNOWN"))%>%
+#   filter(NAME_COM_CORRECTED != "NO FISH") %>%
+#   #filter(grepl("2024", DATE_COL))%>%
+#   select(c("UID", "SITE_ID", "VISIT_NO", "DATE_COL", 
+#            "TAG","LINE", "NAME_COM", 
+#            "NAME_COM_CORRECTED","VOUCH_NUM", "VOUCH_PHOTO", 
+#            "VOUCH_UNK", "VOUCH_QA", "COUNT_6", "COUNT_12", 
+#            "COUNT_18", "COUNT_19", "HAS_COUNT", 
+#            "CREW", "FLAG", "TAXA_ID", 
+#            "COMMENT"))
+# # Vise list
+# View(Check_Taxa)
 
 ################################################################
 #write.csv(Check_Taxa, "Check_Taxa_NRSA_Reconciled_Names_2324_unknowns.csv", row.names = F)
@@ -1015,8 +1022,12 @@ fish_col[fish_col$SITE_ID == "NRS23_SC_10074" &
            fish_col$LINE == 20, "NAME_COM_CORRECTED"] <- "ALABAMA BASS X BARTRAMS BASS"
 
 # removing (YOY) - causes issues with duplicated common names in taxa table
+# Given the scope of NRSA, it does not make sense to incorporate varieties or 
+# life histories. If these are needed, the field names are given in NAME_COM 
 fish_col[fish_col$NAME_COM_CORRECTED=="LARGEMOUTH BASS (YOY)","NAME_COM_CORRECTED"]<-"LARGEMOUTH BASS"
 fish_col[fish_col$NAME_COM_CORRECTED=="CHINOOK SALMON (YOY)","NAME_COM_CORRECTED"]<-"CHINOOK SALMON"
+fish_col[fish_col$NAME_COM_CORRECTED=="RAINBOW TROUT (STEELHEAD)","NAME_COM_CORRECTED"]<-"RAINBOW TROUT"
+fish_col[fish_col$NAME_COM_CORRECTED=="MIRROR CARP","NAME_COM_CORRECTED"]<-"COMMON CARP"
 
 # 99 visits should have been deleted during the 2023
 fish_col[fish_col$VISIT_NO=="99","LINE_CORRECTED"]<-"DELETE"
@@ -1024,9 +1035,13 @@ fish_col[fish_col$VISIT_NO=="99","LINE_CORRECTED"]<-"DELETE"
 
 all(nrow(fish_col) == nrow(fish_col_original))
 
-# write corrected file
-#write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected.tab", sep="\t")
+# write corrected file, file written 4212025 are sites that were added later.
+# it is a subset that is rerun. 
+# fish_col <- fish_col[fish_col$FINAL_NAME=="",]
+#write.table(fish_col, "nrsa2324_fishcollectionWide_fish_Corrected_4212025.tab", sep="\t")
 
+nars_taxa_list[nars_taxa_list$FINAL_NAME%in%c("RAINBOW TROUT (STEELHEAD)","RAINBOW TROUT","COMMON CARP","MIRROR CARP"),]
+taxa_l
 # view the lines that will be removed from the dataset
 view(fish_col[fish_col$LINE_CORRECTED == "DELETE",])
 View(fish_col)

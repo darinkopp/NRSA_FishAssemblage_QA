@@ -11,6 +11,9 @@ library(lubridate)
 ################################################################################
 # Data Files 
 ################################################################################
+#sometimes it is necessary to rerun things but preserve the original. 
+# adding this here to accomodate new file names or versions.
+fish_Col_File <- "nrsa2324_fishcollectionWide_fish_Corrected_4212025.tab"
 
 #fish collection file and results of laboratory QC
 #######
@@ -25,7 +28,7 @@ LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_
 
 # Need to update TAG in fish collection file when field crews did not 
 # properly record
-fish_col <- read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
+fish_col <- read.table(fish_Col_File,
                        sep = "\t") %>%
   mutate(YEAR = substring(DATE_COL, nchar(DATE_COL)-3, nchar(DATE_COL)))
 
@@ -79,7 +82,7 @@ for (i in sid$SITE_ID){
 # identification or 3) those that need further investigation
 # TAG.x is tag listed in fish collection file, TAG.Y is tag provided by 
 # QC lab. 
-tagID
+tagID[unlist(lapply(tagID,function(s) nrow(s)>1))]
 
 # Field crews used lines as tags
 #######
@@ -310,7 +313,6 @@ FINAL_QC_Eval[is.na(FINAL_QC_Eval$QC_Agree),"QC_Agree"]<-FALSE
 # Sometimes the new neame is beyond the range and was not updated 
 # DO NOT OVERWRITE. 
 #write.csv(FINAL_QC_Eval, "QC Taxonomist Files/QC_Check_DK_XXXXXXXX.csv")
-
 
 # duplicate records are new taxa that need to be added to fish_col file
 # counts are proportionally allocated

@@ -30,28 +30,38 @@ site.info <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_siteinfo.tab") %>%
   read.table(sep = "\t", header = T)
 
-# add missing HUCs -- sometimes this could happen because locations are not yet
-# finalized. the site info file will likely be updated by MW in next version
-
-HUCs <- site.info %>%
-  filter(HUC8 == "" & 
-           !is.na(LON_DD83) & 
-           !is.na(LAT_DD83)) %>%
-  select(UID, SITE_ID, LON_DD83, LAT_DD83)
-
-pt <- st_as_sf(HUCs,
-               coords = c("LON_DD83", "LAT_DD83"), 
-               crs = 4269)
-
-# query HUC8 from nhdplustools
-HUCs$HUC8 <- NA
-for(i in 1:nrow(pt)){
-  #i<-1
-  HUCs$HUC8[i] <- get_huc(pt[i,], type = "huc08") %>%
-    select(huc8) %>% 
-    st_set_geometry(NULL)
+if(any(site.info$HUC8=="")){
+  # add missing HUCs -- sometimes this could happen because locations are not yet
+  # finalized. the site info file will likely be updated by MW in next version
+  
+  HUCs <- site.info %>%
+    filter(HUC8 == "" & 
+             !is.na(LON_DD83) & 
+             !is.na(LAT_DD83)) %>%
+    select(UID, SITE_ID, LON_DD83, LAT_DD83)
+  
+  pt <- st_as_sf(HUCs,
+                 coords = c("LON_DD83", "LAT_DD83"), 
+                 crs = 4269)
+  
+  # query HUC8 from nhdplustools
+  HUCs$HUC8 <- NA
+  for(i in 1:nrow(pt)){
+    #i<-1
+    HUCs$HUC8[i] <- get_huc(pt[i,], type = "huc08") %>%
+      select(huc8) %>% 
+      st_set_geometry(NULL)
+  }
+  HUCs$HUC8 <- unlist(HUCs$HUC8)
+  
+  # add missing HUC8 to the site.info 
+  for (i in HUCs$UID){
+    #i<-2022239
+    site.info[site.info$UID==i, "HUC8"] <- paste0("H", HUCs[HUCs$UID == i, "HUC8"])
+  }
+} else {
+  print("all sites have huc8")
 }
-HUCs$HUC8 <- unlist(HUCs$HUC8)
 
 # HUCs <- read.csv("2324_NRSA_QA_Results/2324NRSA_Fish_collection.csv")%>%
 #   select(c(UID,HUC8))%>%
@@ -59,11 +69,6 @@ HUCs$HUC8 <- unlist(HUCs$HUC8)
 #   mutate(HUC8=substring(HUC8,2))
 
 
-# add missing HUC8 to the site.info 
-for (i in HUCs$UID){
-  #i<-2022239
-  site.info[site.info$UID==i, "HUC8"] <- paste0("H", HUCs[HUCs$UID == i, "HUC8"])
-}
 #####################################################
 
 # NRSA taxa list -- most recent. This is needed to crosswalk 
@@ -84,14 +89,13 @@ nars_taxa_list <- nars_taxa_list %>%
   rowwise()%>%
   mutate(NRSA_SPNAME = str_to_sentence(paste0(c(GENUS, SPECIES), collapse = " ")))
 #####################################################
-
+fishfilename <- "nrsa2324_fishcollectionWide_fish_Corrected_4212025.tab"
 # 2324 fish collections with reconciled names 
 ########
-fish_col <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
+fish_col <- read.table(fishfilename,
                       sep = "\t") %>%
-  #filter(LINE_CORRECTED != "DELETE") %>%
-  select(-TAXA_ID)%>%
-  distinct()%>%
+  #select(-TAXA_ID) %>%
+  distinct() %>%
   mutate(FINAL_NAME = NAME_COM_CORRECTED)
 
 
@@ -114,7 +118,6 @@ dim(fish_col)
 Nativeness_Master_Table <- read.csv("2324_NRSA_QA_Results/2324NRSA_Nativeness_Table.csv")%>%
   select(-X)
 ###################################################  
-
 
 # check for taxa that need to be added to master table
 #######
@@ -231,7 +234,7 @@ CHECK_new$NAME_CORRECTION <- ""
 
 WBD <- st_read(dsn = "Supporting Information/WBD_National_GDB/WBD_National_GDB.gdb", layer = "WBDHU8")
 tmap_mode("view")
-p <- WBD[WBD$huc8 == "18020122", "name"]
+p <- WBD[WBD$huc8 == "02080201", "name"]
 tm_shape(p)+
   tm_borders()
 ###########################################
@@ -277,14 +280,20 @@ NRSA_Nativeness_Table <- rbind(Nativeness_Master_Table,
 #########################################
 #write.csv(NRSA_Nativeness_Table, "2324NRSA_Nativeness_Table.csv")
 
+NRSA_Nativeness_Table <- read.csv("2324_NRSA_QA_Results/2324NRSA_Nativeness_Table.csv")
+
 #add native/non-native to fish collection file
 fish_col$FINAL_NAME <- fish_col$NAME_COM_CORRECTED
 finished <- merge(fish_col, 
                   NRSA_Nativeness_Table[, c("HUC8", "TAXA_ID", "NON_NATIVE")], 
                   by = c("HUC8", "TAXA_ID"), all.x = T)
 
-#write.csv(finished, "2324NRSA_Fish_collection.csv")
+dim(finished)
 
+#write.csv(finished, "2324NRSA_Fish_collection_4212025.csv")
+
+#new collections were added by NRS IM. I decided to keep them separate
+#write.csv(finished, "2324NRSA_Fish_collection_NewSites.csv")
 
 # Fun map of nativeness database
 library(tmap)

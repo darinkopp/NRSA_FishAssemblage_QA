@@ -294,4 +294,4 @@ table <- addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,
 table
 #write.csv(table, "Sampling_Suffiency_Summary.csv")
 
-write.csv(SAMPLE_SUF[,c("UID","FISH_SAMPLING_SUFFICIENT_CORRECTED")], "2324_Fish_Sampling_Sufficent.csv")
+write.csv(SAMPLE_SUF[,fewerFields], "2324_Fish_Sampling_Sufficent.csv")
