@@ -35,13 +35,13 @@ site.info <- dir_NRSA_2324 %>%
 
 
 # Fish Collection File -- provides number of individuals
-INDIV <-read.table("nrsa2324_fishcollectionWide_fish_Corrected.tab",
+INDIV <- read.table("Data/nrsa2324_fishcollectionWide_fish_Corrected.tab",
                       sep = "\t") %>%
   filter(LINE_CORRECTED != "DELETE") %>%
   rowwise() %>%
-  mutate(TOTAL = sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19)))%>%
+  mutate(TOTAL = sum(c(COUNT_6, COUNT_12, COUNT_18, COUNT_19),na.rm=T))%>%
   group_by(UID) %>%
-  summarize(TOTALINDV = sum(TOTAL, na.rm = T)) %>%
+  reframe(TOTALINDV = sum(TOTAL, na.rm = T)) %>%
   data.frame()
 
 # Fish Comments for Sampling file
@@ -83,143 +83,164 @@ SAMPLE <- dir_NRSA_2324 %>%
   paste0("/raw/tabfiles/nrsa2324_fishinfoWide.tab") %>%
   read.table(sep = "\t", header = T) 
 
+
 # merge files together and calculate the 
 # percent of transect fished
-SAMPLE_SUF <- Reduce(function(x,y) 
+SAMPLE_SUF <- Reduce(function(x, y) 
   merge(x, y, by = "UID", all.x=T), 
-  list(SAMPLE, 
-       TRCHLEN, 
-       INDIV,
-       CrewLead)) %>%
+  list(SAMPLE, TRCHLEN, INDIV, CrewLead)) %>%
   rowwise() %>%
-  mutate(CWIDTH_Sampled = RCH_LENGTH/TRCHLEN) %>%
+  # if the total reach was not ~40CW or RCH_LENGTH is NA, set to zero
+  # to indicate that the reach was not sufficently sampled
+  mutate(CWIDTH_Sampled = ifelse(!is.na(RCH_LENGTH) & TRCHLEN_FLAG=="N", RCH_LENGTH/TRCHLEN, NA)) %>%
   merge(., SAMPLING_COMMENT[,c("UID", "COMMENT")], 
         by = "UID", all.x = T)%>%
   merge(., FISH_SAMPLING_SUFFICIENT_COMMENT[,c("UID", "COMMENT")], 
-        by = "UID", all.x = T)
-####################################################
+        by = "UID", all.x = T) %>%
+  # some records with NO_FISH had NA values for counts
+  mutate(TOTALINDV = ifelse(is.na(TOTALINDV),0, TOTALINDV))%>%
+  # FISH_SAMPLING cannot have NO_FISH or NO_FISH_OBSERVED but a count
+  # suggests there is a mistake with the field data
+  mutate(FISH_SAMPLING = ifelse(FISH_SAMPLING == "NO_FISH" & TOTALINDV > 0|
+                                FISH_SAMPLING == "NO_FISH_OBSERVED" & TOTALINDV > 0, 
+                                "", FISH_SAMPLING))
 
-# Assign sufficiency category
-############
+####################################################
+view(SAMPLE_SUF[SAMPLE_SUF$FISH_PROTOCOL == "" & !is.na(SAMPLE_SUF$CWIDTH_Sampled), "FISH_SAMPLING"])
+
+SAMPLE_SUF[is.na(SAMPLE_SUF$CWIDTH_Sampled), c("RCH_LENGTH", "TRCHLEN", "RCHWIDTH", "TRCHLEN_FLAG")]
+SAMPLE_SUF[SAMPLE_SUF$CWIDTH_Sampled,]
+SAMPLE_SUF[SAMPLE_SUF$TOTALINDV>0 & SAMPLE_SUF$FISH_SAMPLING%in% c("NO_FISH", "NO_FISH_OBSERVED"),]
+
 SAMPLE_SUF <- SAMPLE_SUF %>%
   mutate(FISH_SAMPLING_SUFFICIENT_CORRECTED = 
            ifelse(
-             !is.na(CWIDTH_Sampled) & FISH_SAMPLING==""&
-                    FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE",
-                                         "LG_NONWADEABLE","LG_WADEABLE")&
-                    CWIDTH_Sampled >= 0.90 &
-                    TRCHLEN_FLAG == "N"|
-               !is.na(CWIDTH_Sampled) & FISH_SAMPLING == "" &
+             # YES-SUFFICIENT: sampled >90% of reach or >50% of the reach for
+             # large systems and >500 individuals or report NO_FISH or 
+             # NO_FISH_OBSERVED with TOTAL == 0 
+             FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) & 
+               CWIDTH_Sampled >= 0.90 |
+             FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) & 
+               CWIDTH_Sampled < 0.90 & CWIDTH_Sampled >= 0.50 &
                FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
-               CWIDTH_Sampled < 0.90 &
-               CWIDTH_Sampled >= 0.50 &
-               TRCHLEN_FLAG == "N" &
                TOTALINDV > 500 | 
-               #is.na(CWIDTH_Sampled)& 
-               FISH_SAMPLING %in% c("NO_FISH", "NO_FISH_OBSERVED"), 
+             FISH_SAMPLING %in% c("NO_FISH", "NO_FISH_OBSERVED"), 
              'YES-SUFFICIENT',
-
-            ifelse(
-              !is.na(CWIDTH_Sampled) &
-                FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
-                CWIDTH_Sampled < 0.90 & 
-                CWIDTH_Sampled >= 0.50 &
-                FISH_SAMPLING_SUFFICIENT != "N"&
-                TRCHLEN_FLAG == "N",
-                "YES-50-90% OF REACH",
+             
+             #############################################
+             # SMALL WADEABLE and SMALL NON_WADEABLE 
+             #############################################
+             
+             # YES-50-90% OF REACH: Crew sampled 50-90% of the reach and did not
+             # indicate that the site was insufficiently sampled. This was set
+             # to give crews the benefit of the doubt
+             ifelse(
+               FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) & 
+                 CWIDTH_Sampled < 0.90 & CWIDTH_Sampled >= 0.50 &
+                 FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
+                 FISH_SAMPLING_SUFFICIENT == "Y",
+               "YES-50-90% OF REACH",
               
-              ifelse(
-                !is.na(CWIDTH_Sampled) &
-                  FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
-                  CWIDTH_Sampled < 0.90 & 
-                  CWIDTH_Sampled >= 0.50 &
-                  TRCHLEN_FLAG == "N",
-                "NO-<40 CW SAMPLED",
-            
-            ifelse(
-              !is.na(CWIDTH_Sampled) &
-                FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
-                CWIDTH_Sampled < 0.50 &
-                CWIDTH_Sampled > 0 &
-                TRCHLEN_FLAG == "N" &
-                TOTALINDV >= 25,
-              "YES-<50% OF REACH,>=25 INDIV",
-                         
-            ifelse(
-              !is.na(CWIDTH_Sampled) &
-                FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
-                CWIDTH_Sampled < 0.50 &
-                CWIDTH_Sampled > 0 &
-                TRCHLEN_FLAG == "N"&
-                TOTALINDV < 25 &
-                FISH_SAMPLING == "",
-              "NO-<50% OF REACH,<25 INDIV",
-            
-            # Large streams
-            ifelse(
-              !is.na(CWIDTH_Sampled) &
-                    FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
-                    CWIDTH_Sampled < 0.90 &
-                    CWIDTH_Sampled >= 0.50 &
-                    TRCHLEN_FLAG == "N" &
-                    FISH_SAMPLING_SUFFICIENT != "Y"&
-                    TOTALINDV < 500 & 
-                    FISH_SAMPLING == "",
-                  'NO->20 CW SAMPLED, <500 INDIV',
-              
-              ifelse(
-                !is.na(CWIDTH_Sampled) &
-                  FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
-                  CWIDTH_Sampled < 0.90 &
-                  CWIDTH_Sampled >= 0.50 &
-                  TRCHLEN_FLAG == "N" &
-                  FISH_SAMPLING_SUFFICIENT == "Y"&
-                  TOTALINDV < 500,
-                'YES->20 CW SAMPLED,<500 INDIV',
-                
-              ifelse(
-                  !is.na(CWIDTH_Sampled) &
-                    FISH_PROTOCOL %in% c("LG_NONWADEABLE","LG_WADEABLE")&
-                    CWIDTH_Sampled < 0.50 &
-                    CWIDTH_Sampled > 0 &
-                    TRCHLEN_FLAG == "N" &
-                    FISH_SAMPLING_SUFFICIENT != "Y"&
-                    TOTALINDV > 500,
-                  'NO-<20 CW SAMPLED,>500 INDIV',
-                  
-                  ifelse(
-                    !is.na(CWIDTH_Sampled) &
-                      FISH_PROTOCOL %in% c("LG_NONWADEABLE","LG_WADEABLE")&
-                      CWIDTH_Sampled < 0.50 &
-                      CWIDTH_Sampled > 0 &
-                      TRCHLEN_FLAG == "N" &
-                      FISH_SAMPLING_SUFFICIENT == "Y"&
-                      TOTALINDV > 500,
-                    'YES-<20 CW SAMPLED, >500 INDIV',
-
+               # YES-<50% OF REACH,>=25 INDIV: Sampled <50% of reach but recovered 
+               # > 25 individuals
                ifelse(
-                 !is.na(CWIDTH_Sampled) &
-                   FISH_PROTOCOL %in% c("LG_NONWADEABLE","LG_WADEABLE")&
-                   CWIDTH_Sampled < 0.50 &
-                   CWIDTH_Sampled > 0 &
-                   TRCHLEN_FLAG == "N" &
-                   TOTALINDV < 500 &
-                   FISH_SAMPLING == "",
-                   'NO-<20 CW SAMPLED,<500 INDIV',
-
-                 ifelse(is.na(CWIDTH_Sampled)|
-                                !is.na(CWIDTH_Sampled) & 
-                          FISH_SAMPLING %in% 
-                          c("NO_PERMIT",	"PERMIT_RESTRICT", 
-                            "EQUIPMENT_FAILURE", "NO_FISH_OTHER",
-                            "NOT_FISHED_REACH_MIN","SITE_CONDITIONS"),
-                         "NO-SITE CONDITIONS", 
-                        
-                 ifelse(TRCHLEN_FLAG == "Y" &
-                          FISH_SAMPLING == "", 
-                        paste0("NO-<40 CW SAMPLED"),""
+                 FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) &
+                   CWIDTH_Sampled < 0.90 & CWIDTH_Sampled >= 0.5 &
+                   FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
+                   FISH_SAMPLING_SUFFICIENT != "Y" &
+                   TOTALINDV >= 25,
+                 "YES->50% OF REACH,>=25 INDIV",
+                 
+                 ifelse(
+                   FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) &
+                     CWIDTH_Sampled < 0.90 & CWIDTH_Sampled >= 0.5 &
+                     FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
+                     FISH_SAMPLING_SUFFICIENT != "Y" &
+                     TOTALINDV < 25,
+                   "NO->50% OF REACH,<25 INDIV",
+                 
+                 # NO-<50% OF REACH,<25 INDIV: <50% of reach sampled and fewer than
+                 # 25 individuals recovered
+                 ifelse(
+                   FISH_SAMPLING == "" & FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
+                     is.na(CWIDTH_Sampled) | 
+                     FISH_SAMPLING == "" & FISH_PROTOCOL %in% c("SM_WADEABLE", "SM_NONWADEABLE")&
+                     CWIDTH_Sampled < 0.50, 
+                   "NO-<40 CW SAMPLED",
+                   
+                   ###############################################  
+                   # LARGE WADEABLE AND NONWADEABLE
+                   ###############################################
+                   
+                   # 'YES->20 CW SAMPLED,<500 INDIV': sampled >50% of reach and < 500 individuals
+                   # but crew had indicated that they sampled sufficiently to characterize 
+                   # the assemblage at the site
+                   ifelse(
+                     FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) &
+                       FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
+                       CWIDTH_Sampled < 0.90 & CWIDTH_Sampled >= 0.50 &
+                       TOTALINDV <= 500 & FISH_SAMPLING_SUFFICIENT == "Y",
+                     'YES->20 CW SAMPLED,<500 INDIV',
+                     
+                     # NO->20 CW SAMPLED, <500 INDIV: sampled >50% of reach and < 500 individuals
+                     # but crew did not indicate that the sample sufficiently characterized 
+                     # the assemblage at the site
+                     ifelse(
+                       FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) &
+                         FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
+                         CWIDTH_Sampled < 0.90 & CWIDTH_Sampled >= 0.50 &
+                         TOTALINDV <= 500 & FISH_SAMPLING_SUFFICIENT != "Y"&
+                         FISH_SAMPLING == "",
+                       'NO->20 CW SAMPLED, <500 INDIV',
+                       
+                       # 'YES-<20 CW SAMPLED, >500 INDIV': Sampled <50% of the reach, recovered 
+                       # >500 individuals and crew indicated that the site was sufficiently 
+                       # sampled
+                       ifelse(
+                         FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) & 
+                           FISH_PROTOCOL %in% c("LG_NONWADEABLE","LG_WADEABLE")&
+                           CWIDTH_Sampled < 0.50 &
+                           TOTALINDV > 500 &
+                           FISH_SAMPLING_SUFFICIENT == "Y", 
+                         'YES-<20 CW SAMPLED, >500 INDIV',
                          
-                       ))))))))))))) %>%
+                         # 'NO-<20 CW SAMPLED,>500 INDIV': Sampled <50% of the reach, recovered 
+                         # >500 individuals and crew did not indicate that the site was sufficiently 
+                         # sampled  
+                         ifelse(
+                           FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) &
+                             FISH_PROTOCOL %in% c("LG_NONWADEABLE","LG_WADEABLE")&
+                             CWIDTH_Sampled < 0.50 &
+                             TOTALINDV > 500 & 
+                             FISH_SAMPLING_SUFFICIENT != "Y",
+                           'NO-<20 CW SAMPLED,>500 INDIV',
+                           
+                           # 'NO-<20 CW SAMPLED,<500 INDIV': Sampled <50% of the reach and recovered 
+                           # <500 individuals. Violates protocol 
+                           ifelse(
+                             FISH_SAMPLING == "" & !is.na(CWIDTH_Sampled) &
+                               FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE")&
+                               CWIDTH_Sampled < 0.50 &
+                               TOTALINDV <= 500, 
+                             'NO-<20 CW SAMPLED,<500 INDIV',
+                             
+                             ifelse(
+                               FISH_SAMPLING == "" & 
+                                 FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE") &
+                                 is.na(CWIDTH_Sampled), 
+                               "NO-<40 CW SAMPLED",
+                             
+                             #######################################################
+                             # FISH_SAMPLING
+                             #######################################################
+                             
+                             # aggregate all to site conditions
+                             ifelse(
+                               FISH_SAMPLING %in% c("NO_PERMIT", "PERMIT_RESTRICT", 
+                                   "EQUIPMENT_FAILURE", "NO_FISH_OTHER",
+                                   "NOT_FISHED_REACH_MIN","SITE_CONDITIONS"),
+                               "NO-SITE CONDITIONS", ""
+                               ))))))))))))) %>%
   data.frame()
 ####################################################
 
@@ -234,8 +255,11 @@ if(all(!is.na(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED)) &
   print ("All entries assigned sufficency class")
 } else {
   stop("unassigned records, either NA or blank")
-  SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "",]
+  view(SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "",])
+  b <- SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED == "","UID"]
+  view(SAMPLE_SUF[SAMPLE_SUF$UID %in% b, c(fewerFields)] )
 }
+fewerFields
 ########################################
 
 # check UIDs from site info
@@ -265,20 +289,30 @@ Check_Sampling <- SAMPLE_SUF[
     substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,1,1) == "N", 
   fewerFields]
 
-# instances where crew reported that they sampled sufficiently but violated protocol 
+
+# instances where crew reported that they sampled sufficiently but violated protocol,
+# typically not setting up the proper transect lenght,
 # and therefore were considered NO using objective criteria 
+view(Check_Sampling%>%
+  filter(FISH_SAMPLING_SUFFICIENT == "Y" & 
+          str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, "N")))
 
 # checked output and manually corrected sites where crew indicated that
 # they did not sample sufficiently, but still reported fish length. 
 # Most were because of site conditions constraining efforts listed in 
 # sufficiency comments
+view(Check_Sampling%>%
+       filter(FISH_SAMPLING_SUFFICIENT == "N" & 
+                str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, "Y")))
+
+
 SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022901,2022910,2022700,2022804,2022901,2022910,
                                2023708,2021888,2021967,2022169,2022176,2022314,
                                2022431,2022815,2023150,2023211,2023241,2023250,
                                2023294,2023300,2023356,2023360,2023389,2023394,
                                2023412,2023433,2023506,2023526,2023626,2023681,
                                2023728,2023820,2023909,2024006,2024031,2024100,
-                               2024129,2023170),
+                               2024129,2023170,2022234,2022844,2023819),
            "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "NO-SITE CONDITIONS"
 
 #view(Check_Sampling)
@@ -292,6 +326,7 @@ table <- addmargins(table(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED,
                           SAMPLE_SUF$FISH_PROTOCOL))
 ############################
 table
-#write.csv(table, "Sampling_Suffiency_Summary.csv")
+#write.csv(table, "Data/Sampling_Suffiency_Summary_06042025.csv")
+view(SAMPLE_SUF[SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED=="NO-<40 CW SAMPLED",fewerFields])
 
-write.csv(SAMPLE_SUF[,fewerFields], "2324_Fish_Sampling_Sufficent.csv")
+write.csv(SAMPLE_SUF[,fewerFields], "Data/2324_Fish_Sampling_Sufficent_06042025.csv")

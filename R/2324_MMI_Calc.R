@@ -20,14 +20,6 @@ site.info <- dir_NRSA_2324 %>%
   select("UID", "SITE_ID", "AG_ECO9","WSAREASQKM")%>%
   filter(!is.na(WSAREASQKM))
 
-# 
-# # need watershed area from MW 5/28/2025... 
-# WSArea <- read.csv("data/NRSA2324_Watersheds.csv")%>%
-#   select("SITE_ID","WSAREASQKM")
-# 
-# site.info <- site.info %>% 
-#   left_join(WSArea,by = "SITE_ID") 
-
 
 #fish Count file -- Prepared by KB/NARS IM team-- merged with Ecoregions
 FishCnts <- dir_NRSA_2324 %>%
@@ -37,17 +29,25 @@ FishCnts <- dir_NRSA_2324 %>%
   select("UID", "TAXA_ID", "FINAL_CT", "ANOM_CT", "IS_DISTINCT", "NON_NATIVE","UNIQUE_ID")%>%
   inner_join(site.info, by = "UID")
 
+# a<-FishCnts[grep("Y",FishCnts$SAMPLED_FISH),]
+# view(a[a$FISH_SAMPLING=="NO_FISH"&a$TOTAL>0,])
+# a[a$SITE_ID == "NRS23_MT_10074",]
+  
+2023332
 #this should be the most recent taxa list
 FishTaxa <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_fish_taxa.tab") %>%
   read.table(sep = "\t", header = T)
+
 
 #########################################
 
 # calculate fish MMI metrics
 ##########
 # This function calculates metrics for each ecoregion's MMI.
-outMets <- calcNRSA_FishMMImets(FishCnts, FishTaxa, "UID",
+outMets <- calcNRSA_FishMMImets(indata = FishCnts, 
+                                inTaxa = FishTaxa, 
+                                samID = "UID",
                                 ecoreg =  "AG_ECO9",
                                 dist = "IS_DISTINCT", ct = "FINAL_CT",
                                 taxa_id = "TAXA_ID", tol = "TOLERANCE_NRSA",
@@ -75,4 +75,12 @@ outMMI <- calcFishMMI(inMets = outMets.1, sampID = "UID", ecoreg = "ECO9", lwsar
 outCond <- assignFishCondition(outMMI, sampID = "UID", ecoreg = "ECO9", mmi = "MMI_FISH")
 #########################################
 
-table(outCond$FISH_MMI_COND)
+# identify sites that were not 
+Condition <- read.csv("Data/2324_Fish_Sampling_Sufficent.csv") %>%
+  select("UID","FISH_SAMPLING_SUFFICIENT_CORRECTED") %>%
+  right_join(outCond, by = "UID") %>%
+  mutate(COND_CHECK = case_when(
+    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("YES", ignore_case=TRUE)) ~ FISH_MMI_COND,
+    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("NO", ignore_case=TRUE)) ~ "Not Assessed",
+    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("SEINING ONLY", ignore_case=TRUE)) ~ "Not Assessed"))
+  
