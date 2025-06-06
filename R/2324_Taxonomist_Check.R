@@ -13,12 +13,12 @@ library(lubridate)
 ################################################################################
 #sometimes it is necessary to rerun things but preserve the original. 
 # adding this here to accomodate new file names or versions.
-fish_Col_File <- "nrsa2324_fishcollectionWide_fish_Corrected_4212025.tab"
+fish_Col_File <- "Data/nrsa2324_fishcollectionWide_fish_Corrected_4212025.tab"
 
 #fish collection file and results of laboratory QC
 #######
 # lab QC results
-LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_26_v2.xlsx")%>%
+LAB_QA <- read_xlsx("Data/QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_26_v2.xlsx")%>%
   data.frame() %>%
   mutate(TAG = as.numeric(TAG.NUMBER))%>%
   mutate(DATE_COL = format(as.Date(as.character(DATE.COLLECTED), 
@@ -238,7 +238,7 @@ print(sid)
 
 # write comparison between field and QC identifications
 #####
-LAB_QA <- read_xlsx("QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_26_v2.xlsx")%>%
+LAB_QA <- read_xlsx("Data/QC Taxonomist Files/68HERC22F0307FinalDatabase_MBI_2025_03_26_v2.xlsx")%>%
   data.frame() %>%
   mutate(TAG=as.numeric(TAG.NUMBER))%>%
   mutate(DATE_COL = format(as.Date(as.character(DATE.COLLECTED), 
@@ -262,7 +262,6 @@ NewFish <- LAB_QA %>%
   select(COMMON.NAME) %>%
   distinct()%>%
   mutate(COMMON.NAME=toupper(COMMON.NAME))
-
 
 #NRSA taxa list as vector
 NARS_NAME_COM_CORRECTED <- nars_taxa_list$FINAL_NAME
@@ -379,7 +378,7 @@ fish_col[grep("\\.",fish_col$LINE),"LINE_CORRECTED"] <- fish_col[grep("\\.",fish
 
 # update disagreements to side with QC taxonomist.  
 #######
-QC_Eval <- read.csv("QC Taxonomist Files/QC_Check_DK_4092025.csv")
+QC_Eval <- read.csv("Data/QC Taxonomist Files/QC_Check_DK_4092025.csv")
 correctNames <- QC_Eval[!QC_Eval$QC_Agree&QC_Eval$Correct!="N",]
 for (q in 1:nrow(correctNames)){
   #q<-1
@@ -403,16 +402,20 @@ mean(FINAL_QC_Eval$QC_Agree, na.rm = T)
 # results by crews that submitted specimens
 crewResults <- FINAL_QC_Eval %>%
   group_by(CREW) %>%
-  summarise(a = mean(QC_Agree,na.rm=T))
+  summarise(a = mean(QC_Agree,na.rm=T), b = length(QC_Agree))
+
+crewResults <- crewResults %>%
+  filter(b>=10)
 
 p1 <- ggplot(crewResults[complete.cases(crewResults),])+
-  geom_dotplot(aes(x = a, y = CREW), dotsize = 0.5,
+  geom_dotplot(aes(x = a, y = CREW, fill = b), dotsize = 0.75,
                stackdir = "center")+
   theme_bw()+ 
   geom_vline(aes(xintercept=median(a)), 
              lty = 2, lwd = 1.25, col = "red")+
-  labs(x = "Mean Agreement (%)", 
-       title = "Average Agreement for Crew")
+  labs(x = "Agreement (Proportion)", 
+       title = "QA Voucher Agreement by Crew \n(min 10 specimens)")+
+  scale_fill_continuous(name = "Number of \nSpecimens")
 
 
 # #average agreement for sites 
@@ -430,4 +433,4 @@ p1 <- ggplot(crewResults[complete.cases(crewResults),])+
 
 ##############################################
 print(p1)
-#ggsave("FieldLabAgree.jpeg", p1, height = 5, width = 5)
+#ggsave("Figures/VoucherAgree.jpeg", p1, height = 5, width = 5)

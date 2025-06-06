@@ -20,7 +20,6 @@ site.info <- dir_NRSA_2324 %>%
   select("UID", "SITE_ID", "AG_ECO9","WSAREASQKM")%>%
   filter(!is.na(WSAREASQKM))
 
-
 #fish Count file -- Prepared by KB/NARS IM team-- merged with Ecoregions
 FishCnts <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_fishcount_data.tab") %>%
@@ -29,17 +28,10 @@ FishCnts <- dir_NRSA_2324 %>%
   select("UID", "TAXA_ID", "FINAL_CT", "ANOM_CT", "IS_DISTINCT", "NON_NATIVE","UNIQUE_ID")%>%
   inner_join(site.info, by = "UID")
 
-# a<-FishCnts[grep("Y",FishCnts$SAMPLED_FISH),]
-# view(a[a$FISH_SAMPLING=="NO_FISH"&a$TOTAL>0,])
-# a[a$SITE_ID == "NRS23_MT_10074",]
-  
-2023332
 #this should be the most recent taxa list
 FishTaxa <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_fish_taxa.tab") %>%
   read.table(sep = "\t", header = T)
-
-
 #########################################
 
 # calculate fish MMI metrics
@@ -47,7 +39,7 @@ FishTaxa <- dir_NRSA_2324 %>%
 # This function calculates metrics for each ecoregion's MMI.
 outMets <- calcNRSA_FishMMImets(indata = FishCnts, 
                                 inTaxa = FishTaxa, 
-                                samID = "UID",
+                                sampID = "UID",
                                 ecoreg =  "AG_ECO9",
                                 dist = "IS_DISTINCT", ct = "FINAL_CT",
                                 taxa_id = "TAXA_ID", tol = "TOLERANCE_NRSA",
@@ -75,7 +67,7 @@ outMMI <- calcFishMMI(inMets = outMets.1, sampID = "UID", ecoreg = "ECO9", lwsar
 outCond <- assignFishCondition(outMMI, sampID = "UID", ecoreg = "ECO9", mmi = "MMI_FISH")
 #########################################
 
-# identify sites that were not 
+# identify/remove sites that were not sufficiently sampled 
 Condition <- read.csv("Data/2324_Fish_Sampling_Sufficent.csv") %>%
   select("UID","FISH_SAMPLING_SUFFICIENT_CORRECTED") %>%
   right_join(outCond, by = "UID") %>%
@@ -83,4 +75,41 @@ Condition <- read.csv("Data/2324_Fish_Sampling_Sufficent.csv") %>%
     str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("YES", ignore_case=TRUE)) ~ FISH_MMI_COND,
     str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("NO", ignore_case=TRUE)) ~ "Not Assessed",
     str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("SEINING ONLY", ignore_case=TRUE)) ~ "Not Assessed"))
+
+
+
+library(ggplot2)
+library(ggpattern)
+a <- tapply(Condition$COND_CHECK, Condition$ECO9, function(s) round(prop.table(table(s)),3))
+b <- do.call(rbind, lapply(a, function(x) data.frame(x)))
+
+b$ECO <- substring(rownames(b), 0, 3)
+b <- rbind(b,setNames(data.frame(round(prop.table(table(Condition$COND_CHECK)),2), 
+                    ECO = "ALL"),c("s","Freq", "ECO")))
+
+b$s <- factor(b$s, levels = c("Not Assessed", "Poor", "Fair","Good"))
+P1 <- ggplot(b, aes(x = ECO, 
+                     y = Freq, 
+                     fill = s))+
+  geom_bar(stat="identity", 
+           color='black') +
+  theme_bw() +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("orange","white", "grey", "black")) +
   
+  labs(
+    title = "Fish assemblage condition - Proportion of sites, unweighted", 
+    fill = "") + 
+  theme(
+    legend.title = element_text(hjust = 0.1), 
+    legend.position = "top")+
+  ylab("Percentage of Sites") +
+  xlab("Ecoregion") 
+
+ggsave(
+  filename = "Figures/FishAssemblageCondition.jpeg", 
+  P1, 
+  height = 5, 
+  width = 6, 
+  units = "in")
