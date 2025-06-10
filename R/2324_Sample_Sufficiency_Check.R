@@ -227,7 +227,7 @@ SAMPLE_SUF <- SAMPLE_SUF %>%
                                FISH_SAMPLING == "" & 
                                  FISH_PROTOCOL %in% c("LG_NONWADEABLE", "LG_WADEABLE") &
                                  is.na(CWIDTH_Sampled), 
-                               "NO-<40 CW SAMPLED",
+                               "NO-<20 CW SAMPLED",
                              
                              
                              # FISH_SAMPLING
@@ -288,10 +288,15 @@ site.info[(!site.info$UID%in%SAMPLE_SUF$UID), "UID"]
 # and therefore were considered NO using objective criteria 
 
 view(SAMPLE_SUF %>%
-  filter(FISH_SAMPLING_SUFFICIENT == "Y" &
+  filter(FISH_SAMPLING_SUFFICIENT != "N" &
     substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 1, 1) == "N")%>%      
   select(fewerFields))
 
+# Corrections after viewing results
+SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022994),
+           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "YES-50-90% OF REACH"
+SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022699),
+           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "YES->20 CW SAMPLED,<500 INDIV"
 
 # checked output and manually corrected sites where crew indicated that
 # they did not sample sufficiently, but still reported fish length. 
@@ -299,9 +304,13 @@ view(SAMPLE_SUF %>%
 # sufficiency comments
 
 view(SAMPLE_SUF %>%
-       filter(FISH_SAMPLING_SUFFICIENT == "N" &
+       filter(FISH_SAMPLING_SUFFICIENT != "Y" &
                 substring(SAMPLE_SUF$FISH_SAMPLING_SUFFICIENT_CORRECTED, 1, 1) == "Y")%>%      
        select(fewerFields))
+
+
+SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2021998, 2024306),
+           "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "YES-50-90% OF REACH"
 
 
 # Comments by crew indicated that site conditions prevented sufficient sampling
@@ -311,7 +320,8 @@ SAMPLE_SUF[SAMPLE_SUF$UID%in%c(2022901,2022910,2022700,2022804,2022901,2022910,
                                2023294,2023300,2023356,2023360,2023389,2023394,
                                2023412,2023433,2023506,2023526,2023626,2023681,
                                2023728,2023820,2023909,2024006,2024031,2024100,
-                               2024129,2023170,2022234,2022844,2023819,2022660),
+                               2024129,2023170,2022234,2022844,2023819,2022660, 
+                               2023745,2022112,2022758,2024089),
            "FISH_SAMPLING_SUFFICIENT_CORRECTED"] <- "NO-SITE CONDITIONS"
 
 # Few disagreements did not have comments and were sent to field crews 

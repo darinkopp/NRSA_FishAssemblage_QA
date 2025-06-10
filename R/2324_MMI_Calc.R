@@ -20,6 +20,7 @@ site.info <- dir_NRSA_2324 %>%
   select("UID", "SITE_ID", "AG_ECO9","WSAREASQKM")%>%
   filter(!is.na(WSAREASQKM))
 
+
 #fish Count file -- Prepared by KB/NARS IM team-- merged with Ecoregions
 FishCnts <- dir_NRSA_2324 %>%
   paste0("/data/tabfiles/nrsa2324_fishcount_data.tab") %>%
@@ -41,19 +42,29 @@ outMets <- calcNRSA_FishMMImets(indata = FishCnts,
                                 inTaxa = FishTaxa, 
                                 sampID = "UID",
                                 ecoreg =  "AG_ECO9",
-                                dist = "IS_DISTINCT", ct = "FINAL_CT",
-                                taxa_id = "TAXA_ID", tol = "TOLERANCE_NRSA",
-                                vel = "VEL_NRSA", habitat = "HABITAT_NRSA",
-                                trophic = "TROPHIC_NRSA", migr = "MIGR_NRSA", nonnat = "NON_NATIVE",
-                                reprod = "REPROD_NRSA", family = "FAMILY", genus = "GENUS",
+                                dist = "IS_DISTINCT", 
+                                ct = "FINAL_CT",
+                                taxa_id = "TAXA_ID", 
+                                tol = "TOLERANCE_NRSA",
+                                vel = "VEL_NRSA", 
+                                habitat = "HABITAT_NRSA",
+                                trophic = "TROPHIC_NRSA", 
+                                migr = "MIGR_NRSA", 
+                                nonnat = "NON_NATIVE",
+                                reprod = "REPROD_NRSA", 
+                                family = "FAMILY", 
+                                genus = "GENUS",
                                 comname = "FINAL_NAME")
 
 #########################################
+dim(outMets)
+outMets[outMets$UID=="2021889",]
+FishCnts[FishCnts$UID=="2021889",]
 
 # calculate fish MMI
 ############
 # We have to supply the log10 of watershed area because some metrics are adjusted for watershed size.
-outMets.1 <- merge(outMets[1:1267,], site.info[, c("UID", "SITE_ID", "WSAREASQKM")], by = "UID")%>%
+outMets.1 <- merge(outMets, site.info[, c("UID", "SITE_ID", "WSAREASQKM")], by = "UID")%>%
   mutate(LWSAREA = log10(WSAREASQKM), ECO9 = AG_ECO9)%>%
   select(-c("AG_ECO9", "WSAREASQKM"))
 
@@ -66,21 +77,42 @@ outMMI <- calcFishMMI(inMets = outMets.1, sampID = "UID", ecoreg = "ECO9", lwsar
 # collected would be required to assign condition only if we had missing MMI values.
 outCond <- assignFishCondition(outMMI, sampID = "UID", ecoreg = "ECO9", mmi = "MMI_FISH")
 #########################################
+Data/2324_Fish_Sampling_Sufficent.csv
+dim(outCond)
+dim(outMMI)
+names(Condition)
+
 
 # identify/remove sites that were not sufficiently sampled 
 Condition <- read.csv("Data/2324_Fish_Sampling_Sufficent.csv") %>%
-  select("UID","FISH_SAMPLING_SUFFICIENT_CORRECTED") %>%
-  right_join(outCond, by = "UID") %>%
+  select("UID","FISH_SAMPLING_SUFFICIENT_CORRECTED", ) %>%
+  left_join(site.info[,c("UID","SITE_ID","AG_ECO9")], by="UID") %>%
+  left_join(outCond, by = "UID") %>%
   mutate(COND_CHECK = case_when(
-    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("YES", ignore_case=TRUE)) ~ FISH_MMI_COND,
-    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("NO", ignore_case=TRUE)) ~ "Not Assessed",
-    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, regex("SEINING ONLY", ignore_case=TRUE)) ~ "Not Assessed"))
+    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, pattern = "YES") ~ FISH_MMI_COND,
+    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, pattern = "NO") ~ "Not Assessed",
+    str_detect(FISH_SAMPLING_SUFFICIENT_CORRECTED, pattern = "SEINING ONLY") ~ "Not Assessed"))
 
+#
+Condition[is.na(Condition$COND_CHECK),"COND_CHECK"]<-"Poor"
+
+# there are some UIDs that appear to be incorrect
+sum(Condition$COND_CHECK=="Not Assessed")
+Condition[is.na(Condition$COND_CHECK),"FISH_SAMPLING_SUFFICIENT_CORRECTED"]
+Condition[is.na(Condition$COND_CHECK)&Condition$FISH_SAMPLING_SUFFICIENT_CORRECTED=="YES-<20 CW SAMPLED, >500 INDIV","UID"]
+FishCnts[FishCnts$UID==2022660,]
+Condition[Condition$UID==2022660,]
+INDIV[INDIV$UID%in%c(2022660, 2023413, 2023413, 2023802, 2023845),]
+
+table(Condition$FISH_SAMPLING_SUFFICIENT_CORRECTED)
+table(Condition$COND_CHECK)
+
+prop.table(table(Condition$COND_CHECK[Condition$AG_ECO9=="TPL"]))
 
 
 library(ggplot2)
 library(ggpattern)
-a <- tapply(Condition$COND_CHECK, Condition$ECO9, function(s) round(prop.table(table(s)),3))
+a <- tapply(Condition$COND_CHECK, Condition$AG_ECO9, function(s) round(prop.table(table(s)),3))
 b <- do.call(rbind, lapply(a, function(x) data.frame(x)))
 
 b$ECO <- substring(rownames(b), 0, 3)
@@ -99,7 +131,7 @@ P1 <- ggplot(b, aes(x = ECO,
     values = c("orange","white", "grey", "black")) +
   
   labs(
-    title = "Fish assemblage condition - Proportion of sites, unweighted", 
+    title = "Fish assemblage condition as proportion of sites (unweighted)", 
     fill = "") + 
   theme(
     legend.title = element_text(hjust = 0.1), 
@@ -113,3 +145,30 @@ ggsave(
   height = 5, 
   width = 6, 
   units = "in")
+
+
+reshape2::dcast(s~ECO,data=b, value.var = "Freq")
+
+
+sum(is.na(Condition$SITE_ID))
+Condition <- Condition[!is.na(Condition$SITE_ID),]
+Condition$STATE <- unlist(lapply(strsplit(Condition[,"SITE_ID"],"_"),"[[",2))
+
+tapply(Condition$COND_CHECK, Condition$STATE, function(s) round(prop.table(table(s)),3))
+
+
+a <- tapply(Condition$COND_CHECK, Condition$STATE, function(s) mean(s=="Not Assessed"))
+a <- data.frame(a,state=names(a))
+a$state<-factor(a$state,levels = a$state[order(a$a)])
+mean(Condition$COND_CHECK=="Not Assessed")
+
+P2 <- ggplot(a)+
+  geom_dotplot(aes(x = a, y = state), dotsize = 0.75,
+             stackdir = "center")+
+  theme_bw()+
+  labs(x = "Proportion of sites not assessed", 
+       title = "Not Assessed by State")+
+  theme(text = element_text(size = 20))
+
+ggsave("Figures/NotAssessed_State.jpeg", P2, height = 11, width = 8)
+
